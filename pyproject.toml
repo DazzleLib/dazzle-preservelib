@@ -5,31 +5,44 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dazzle-preservelib"
 dynamic = ["version"]
-description = "A new project created from git-repokit-template"
+description = "Manifest + operations library -- the DazzleLib stack's L3 orchestration layer (PreserveManifest, transactional copy/move/restore/verify, link policy)."
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
-requires-python = ">=3.10"
+license = {text = "MIT"}
+requires-python = ">=3.9"
 authors = [
     {name = "djdarcy", email = "djdarcy@users.noreply.github.com"},
 ]
-keywords = []
+keywords = ["dazzlelib", "preserve", "manifest", "backup", "file-operations", "verification", "links", "stack"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
-    "Environment :: Console",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Utilities",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Archiving :: Backup",
+    "Topic :: System :: Filesystems",
 ]
 
-dependencies = []
+# L3 delegates DOWN: dazzle-lib (B, contracts: Serializable/DazzleDataMixin/
+# PreserveError), dazzle-filekit (L1, the OS mechanics -- links/metadata/hashing/
+# disk-space). unctools (L0) joins when UNC-identity delegation lands.
+dependencies = [
+    "dazzle-lib>=0.1.0",
+    "dazzle-filekit>=0.3.2",
+]
 
 [project.optional-dependencies]
+# The .dazzlelink manifest bridge requires the L2 record library; absent it,
+# the bridge raises a clear named error (never silent) -- STACK-MAP D2.
+dazzlelink = [
+    "dazzle-linklib>=0.2.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -40,8 +53,8 @@ Homepage = "https://github.com/DazzleLib/dazzle-preservelib"
 Repository = "https://github.com/DazzleLib/dazzle-preservelib"
 Issues = "https://github.com/DazzleLib/dazzle-preservelib/issues"
 
-[project.scripts]
-dazzle-preservelib = "dazzle_preservelib.cli:main"
+# Library-only: no console_scripts. The `preserve` CLI lives in the
+# DazzleTools/preserve tool, which consumes this library (STACK-MAP P3).
 
 [tool.setuptools.dynamic]
 version = {attr = "dazzle_preservelib._version.PIP_VERSION"}

@@ -6,7 +6,7 @@
   "language": "python",
   "branch_strategy": "minimal",
   "private_branch": "private",
-  "description": "A new project created from git-repokit-template",
+  "description": "Manifest + operations library -- the DazzleLib stack's L3 orchestration layer.",
   "author": {
     "name": "djdarcy",
     "email": "djdarcy@users.noreply.github.com"
