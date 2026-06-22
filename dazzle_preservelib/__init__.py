@@ -1,27 +1,128 @@
-"""dazzle-preservelib -- the DazzleLib stack's L3 manifest + operations library.
+"""
+preservelib - Library for file preservation with path normalization and verification.
 
-It owns the *preserve* domain: the ``PreserveManifest`` (a content-hash record
-of what was copied, with DAG lineage), transactional **copy / move / restore /
-verify** operations, destination-conflict resolution, link-handling **policy**
-(``LinkHandlingMode`` + destination-relative cycle analysis), and verification.
-
-The boundary (STACK-MAP, layers B/L0/L1/L2/L3): this library owns the
-ORCHESTRATION and the POLICY. The primitives it stands on delegate DOWN --
-file/link mechanics to ``dazzle-filekit`` (L1), UNC/drive identity to
-``unctools`` (L0), the ``.dazzlelink`` record bridge to ``dazzle-linklib`` (L2,
-via the optional ``[dazzlelink]`` extra). Contracts come from ``dazzle-lib``
-(B). It never reimplements a lower layer's primitive.
-
-Status: **P3 extraction in progress (pre-release).** The manifest + operations
-are being imported from the ``preserve`` project (collapsing three drifting
-copies into one canonical home) and the filesystem primitives rewired to
-delegate to filekit. The first functional release is **0.8.0** (continuing the
-preserve lineage). Tracked on the roadmap (issue #2).
-
-License: MIT (whole stack; STACK-MAP D11). Architecture contract:
-https://github.com/DazzleLib/.github/blob/main/docs/STACK-MAP.md
+This package provides tools for copying, moving, and restoring files with path preservation,
+file verification, and detailed operation tracking through manifests.
 """
 
-from ._version import PIP_VERSION, __app_name__, __version__
+import os
+import sys
+import logging
+from pathlib import Path
 
-__all__ = ["__version__", "__app_name__", "PIP_VERSION"]
+# Setup package-level logger (without handlers - will be configured by preserve.py)
+# Note: This is only used when the package is imported directly, not through preserve.py
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# propagate=True by default, so we don't need to set it explicitly
+
+# Import core functionality
+from .manifest import (
+    PreserveManifest,
+    calculate_file_hash,
+    verify_file_hash,
+    create_manifest_for_path,
+    read_manifest
+)
+
+from .operations import (
+    copy_operation,
+    move_operation,
+    verify_operation,
+    restore_operation
+)
+
+from .metadata import (
+    collect_file_metadata,
+    apply_file_metadata,
+    compare_metadata
+)
+
+from .restore import (
+    restore_file_to_original,
+    restore_files_from_manifest,
+    find_restoreable_files
+)
+
+# Version from this package's own _version.py (repokit autobump).
+from ._version import __version__, __app_name__, PIP_VERSION
+
+def configure_logging(level=logging.INFO, log_file=None):
+    """
+    Configure logging for preservelib.
+    
+    This is primarily for standalone usage of preservelib (when not imported by preserve.py).
+    When used with preserve.py, logging will be configured there.
+    
+    Args:
+        level: Logging level
+        log_file: Optional path to log file
+    """
+    # Set up a standard format for all handlers
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(log_format)
+    
+    # Configure the root logger (to handle all propagated messages)
+    root_logger = logging.getLogger()
+    
+    # Only configure if not already configured
+    if not root_logger.handlers:
+        root_logger.setLevel(level)
+        
+        # Add console handler to root logger
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(level)
+        root_logger.addHandler(console_handler)
+        
+        # Add file handler to root logger if specified
+        if log_file:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(level)
+            root_logger.addHandler(file_handler)
+    
+    # Set the level on the preservelib and submodule loggers
+    for module_name in [__name__, 'preservelib.operations', 'preservelib.dazzlelink']:
+        module_logger = logging.getLogger(module_name)
+        module_logger.setLevel(level)
+        # Keep propagate=True to avoid duplicate logging
+    
+    logger.debug(f"Logging configured for preservelib with level {level}")
+
+def enable_verbose_logging():
+    """Enable verbose (debug) logging."""
+    configure_logging(logging.DEBUG)
+
+# __all__ defines the public API
+__all__ = [
+    # Version
+    '__version__',
+    
+    # Logging functions
+    'configure_logging',
+    'enable_verbose_logging',
+    
+    # Manifest functions
+    'PreserveManifest',
+    'calculate_file_hash',
+    'verify_file_hash',
+    'create_manifest_for_path',
+    'read_manifest',
+    
+    # Operation functions
+    'copy_operation',
+    'move_operation',
+    'verify_operation',
+    'restore_operation',
+    
+    # Metadata functions
+    'collect_file_metadata',
+    'apply_file_metadata',
+    'compare_metadata',
+    
+    # Restore functions
+    'restore_file_to_original',
+    'restore_files_from_manifest',
+    'find_restoreable_files'
+]
