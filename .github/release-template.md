@@ -20,13 +20,13 @@
 ## Installation
 
 ```bash
-pip install $PACKAGE_NAME
+pip install dazzle_preservelib
 ```
 
 ### From Source
 ```bash
-git clone https://github.com/$GITHUB_ORG/$PROJECT_NAME.git
-cd $PROJECT_NAME
+git clone https://github.com/DazzleLib/dazzle-preservelib.git
+cd dazzle-preservelib
 pip install -e .
 ```
 
