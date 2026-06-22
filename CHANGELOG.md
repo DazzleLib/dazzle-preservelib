@@ -16,9 +16,17 @@ release (`docs/api-stability.md`).
 - Project scaffold: MIT license, `dazzle_preservelib` package, charter
   docstring, day-one guards (`docs/api-stability.md` + import canary).
 
+### Changed (P3 extraction -- toward 0.8.0)
+- Imported the canonical `preservelib` verbatim (conservation snapshot;
+  collapses the three drifting copies preserve/ghtraf/safedel into one home),
+  validated through the real `preserve` CLI, then began delegating its
+  primitives DOWN to `dazzle-filekit` (L1):
+  - **`metadata` -> re-export shim over `dazzle_filekit.metadata`** (V6). The
+    ~665-line standalone implementation is removed; filekit's verified superset
+    (ported from this code, then extended) is the single home. The safedel embed
+    already ran this exact delegation in production.
+
 ### Notes
-- The manifest + operations extraction from the `preserve` project (stack phase
-  P3) is in progress: three drifting `preservelib` copies (preserve / ghtraf /
-  safedel) collapse into this one home; filesystem primitives delegate down to
-  `dazzle-filekit` (L1); the `preserve` CLI thins to a consumer. The first
-  functional release ships as 0.8.0 (Roadmap, issue #2).
+- The first functional release ships as **0.8.0** (continuing the preserve
+  lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages).
+  Roadmap: issue #2.

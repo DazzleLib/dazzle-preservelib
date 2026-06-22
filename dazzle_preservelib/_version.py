@@ -17,15 +17,15 @@ Version levels:
 
 # Version components - edit these for version bumps
 MAJOR = 0
-MINOR = 1
+MINOR = 8
 PATCH = 0
-PHASE = ""  # Per-MINOR feature set: "" (stable), "alpha", "beta", "rc1", etc.
+PHASE = "alpha"  # P3 extraction in progress; drops to "" at the 0.8.0 ship
 
 # Project-level phase (independent of version phase)
-PROJECT_PHASE = ""  # "prealpha", "alpha", "beta", "stable", or ""
+PROJECT_PHASE = "alpha"  # "prealpha", "alpha", "beta", "stable", or ""
 
 # Auto-updated by git hooks - do not edit manually
-__version__ = "0.1.0_main_7-20260622-787b61d1"
+__version__ = "0.8.0-alpha_main_8-20260622-0945494f"
 __app_name__ = "dazzle-preservelib"
 
 
