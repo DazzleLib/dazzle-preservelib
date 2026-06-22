@@ -20,14 +20,29 @@ Link handling modes (for MOVE operations with existing links in source):
 """
 
 import os
-import sys
 import logging
-import subprocess
-import ctypes
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+# L1 delegation: the intrinsic link MECHANICS live in dazzle-filekit. preservelib
+# keeps the L3 POLICY (LinkHandlingMode, the relational LinkInfo, decide_link_action,
+# create_link orchestration) and thin wrappers that preserve preservelib's INTERFACE
+# -- the 'soft'/'hard' vocabulary the on-disk manifest stores, and the (bool, error)
+# return shapes -- over filekit's primitives (which return 'symlink'/'hardlink' + bool).
+# See private/claude/2026-06-22__links-delegation-conservation-audit.md.
+from dazzle_filekit.links import (
+    detect_link_type as _fk_detect_link_type,
+    read_link_target as _fk_read_link_target,
+    create_junction as _fk_create_junction,
+    create_hardlink as _fk_create_hardlink,
+    remove_link as _fk_remove_link,
+    LINK_SYMLINK as _FK_SYMLINK,
+    LINK_HARDLINK as _FK_HARDLINK,
+)
+from dazzle_filekit.utils.validation import is_junction as _fk_is_junction
+from dazzle_filekit.operations import create_symlink as _fk_create_symlink
 
 logger = logging.getLogger(__name__)
 
@@ -296,43 +311,11 @@ def is_junction(path: Union[str, Path]) -> bool:
     """
     Check if a path is a Windows NTFS junction.
 
-    Args:
-        path: Path to check
-
-    Returns:
-        True if path is a junction
+    Delegates to dazzle_filekit (L1). filekit reads the reparse TAG via
+    DeviceIoControl, so it correctly distinguishes a junction from a directory
+    symlink -- preservelib's old attribute-only check could not (V7 fix).
     """
-    if os.name != 'nt':
-        return False
-
-    path = Path(path)
-
-    if not path.exists():
-        return False
-
-    if not path.is_dir():
-        return False
-
-    try:
-        # Use GetFileAttributesW to check for reparse point
-        FILE_ATTRIBUTE_REPARSE_POINT = 0x400
-        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
-
-        if attrs == -1:  # INVALID_FILE_ATTRIBUTES
-            return False
-
-        if not (attrs & FILE_ATTRIBUTE_REPARSE_POINT):
-            return False
-
-        # It's a reparse point - could be junction or symlink
-        # Junctions and symlinks are both reparse points on Windows
-        # For our purposes, we treat directory reparse points as "junction-like"
-        # The key distinction is that it's a link, not a real directory
-        return True
-
-    except Exception as e:
-        logger.debug(f"Error checking junction status for {path}: {e}")
-        return False
+    return _fk_is_junction(path)
 
 
 def is_symlink(path: Union[str, Path]) -> bool:
@@ -350,98 +333,31 @@ def is_symlink(path: Union[str, Path]) -> bool:
 
 def detect_link_type(path: Union[str, Path]) -> Optional[str]:
     """
-    Detect what type of link a path is.
+    Detect what type of link a path is, in preservelib's vocabulary.
 
-    Args:
-        path: Path to check
+    The detection LOGIC (including the reparse-tag junction fix) comes from
+    dazzle_filekit; we translate filekit's 'symlink'/'hardlink' back to
+    preservelib's 'soft'/'hard' so the on-disk manifest format and every
+    downstream link-type comparison (create_link, remove_link, decide_link_action)
+    keep working unchanged.
 
-    Returns:
-        Link type string ('junction', 'soft', 'hard') or None if not a link
+    Returns: 'junction' / 'soft' / 'hard', or None if not a link.
     """
-    path = Path(path)
-
-    if not path.exists() and not path.is_symlink():
-        return None
-
-    # Check symlink first
-    if path.is_symlink():
-        return LINK_TYPE_SOFT
-
-    # Check junction on Windows
-    if os.name == 'nt' and is_junction(path):
-        return LINK_TYPE_JUNCTION
-
-    # Hard links are indistinguishable from regular files
-    # We can only detect them by checking link count > 1
-    try:
-        if path.is_file():
-            stat_info = path.stat()
-            if hasattr(stat_info, 'st_nlink') and stat_info.st_nlink > 1:
-                return LINK_TYPE_HARD
-    except Exception:
-        pass
-
-    return None
+    kind = _fk_detect_link_type(path)
+    # junction + None pass through unchanged; symlink->soft, hardlink->hard.
+    return {_FK_SYMLINK: LINK_TYPE_SOFT, _FK_HARDLINK: LINK_TYPE_HARD}.get(kind, kind)
 
 
 def get_link_target(path: Union[str, Path]) -> Optional[str]:
     """
-    Get the target of a link.
+    Get the target of a link (symlink or junction), or None.
 
-    Args:
-        path: Path to the link
-
-    Returns:
-        Target path as string, or None if not a link or error
+    Delegates to dazzle_filekit.read_link_target -- reads junction targets via the
+    DeviceIoControl reparse buffer and strips the Windows extended-length prefix,
+    replacing preservelib's banned `cmd /c dir /al` parse (which mismatched on
+    substring names and mangled UNC / extended-length targets).
     """
-    path = Path(path)
-
-    try:
-        if path.is_symlink():
-            return str(os.readlink(path))
-
-        # For junctions on Windows, use a different approach
-        if os.name == 'nt' and is_junction(path):
-            return _get_junction_target(path)
-
-    except Exception as e:
-        logger.debug(f"Error getting link target for {path}: {e}")
-
-    return None
-
-
-def _get_junction_target(path: Union[str, Path]) -> Optional[str]:
-    """
-    Get the target of a Windows junction using fsutil or dir command.
-
-    Args:
-        path: Path to the junction
-
-    Returns:
-        Target path or None
-    """
-    try:
-        # Try using dir command to get junction target
-        result = subprocess.run(
-            ['cmd', '/c', 'dir', '/al', str(Path(path).parent)],
-            capture_output=True, text=True, check=False
-        )
-
-        if result.returncode == 0:
-            # Parse output looking for our junction
-            name = Path(path).name
-            for line in result.stdout.split('\n'):
-                if f'<JUNCTION>' in line and name in line:
-                    # Extract target from [target] format
-                    start = line.find('[')
-                    end = line.find(']')
-                    if start != -1 and end != -1:
-                        return line[start+1:end]
-
-    except Exception as e:
-        logger.debug(f"Error getting junction target: {e}")
-
-    return None
+    return _fk_read_link_target(path)
 
 
 def create_link(
@@ -517,84 +433,45 @@ def create_link(
 
 def _create_junction(link_path: Path, target_path: Path) -> Tuple[bool, Optional[str]]:
     """
-    Create a Windows NTFS junction.
+    Create a Windows NTFS junction at link_path pointing to target_path.
 
-    Args:
-        link_path: Where to create the junction
-        target_path: What the junction should point to
-
-    Returns:
-        Tuple of (success, error_message)
+    Delegates to dazzle_filekit.create_junction (PowerShell New-Item, replacing
+    preservelib's banned cmd mklink /j). NOTE filekit's signature is
+    (target, link) -- the arguments are swapped here.
     """
-    if os.name != 'nt':
-        return False, "Junctions are only supported on Windows"
-
-    try:
-        # Use mklink /j command
-        result = subprocess.run(
-            ['cmd', '/c', 'mklink', '/j', str(link_path), str(target_path)],
-            capture_output=True, text=True, check=False
-        )
-
-        if result.returncode == 0:
-            return True, None
-        else:
-            return False, f"mklink /j failed: {result.stderr.strip()}"
-
-    except Exception as e:
-        return False, str(e)
+    ok = _fk_create_junction(target_path, link_path)
+    return (True, None) if ok else (False, "Junction creation failed (see logs)")
 
 
 def _create_symlink(link_path: Path, target_path: Path, is_directory: bool) -> Tuple[bool, Optional[str]]:
     """
-    Create a symbolic link.
+    Create a symbolic link at link_path pointing to target_path.
 
-    Args:
-        link_path: Where to create the symlink
-        target_path: What the symlink should point to
-        is_directory: Whether target is a directory
-
-    Returns:
-        Tuple of (success, error_message)
+    Delegates to dazzle_filekit.create_symlink, which adds an elevation/UAC
+    fallback chain on Windows (os.symlink -> win32 unprivileged flag -> mklink ->
+    PowerShell elevation). NOTE filekit's signature is (target, link, ...) --
+    arguments swapped here. The elevation guidance message is synthesized on
+    failure (filekit logs it rather than returning it).
     """
-    try:
-        if os.name == 'nt':
-            os.symlink(str(target_path), str(link_path), target_is_directory=is_directory)
-        else:
-            os.symlink(str(target_path), str(link_path))
+    ok = _fk_create_symlink(target_path, link_path, target_is_directory=is_directory)
+    if ok:
         return True, None
-
-    except OSError as e:
-        if os.name == 'nt' and e.winerror == 1314:
-            return False, "Creating symlinks requires administrator privileges or Developer Mode on Windows"
-        return False, str(e)
-    except Exception as e:
-        return False, str(e)
+    return False, (
+        "Symlink creation failed -- on Windows this may require administrator "
+        "privileges or Developer Mode (see logs)"
+    )
 
 
 def _create_hard_link(link_path: Path, target_path: Path) -> Tuple[bool, Optional[str]]:
     """
-    Create a hard link (files only, same filesystem).
+    Create a hard link at link_path pointing to the file target_path.
 
-    Args:
-        link_path: Where to create the hard link
-        target_path: What file to link to
-
-    Returns:
-        Tuple of (success, error_message)
+    Delegates to dazzle_filekit.create_hardlink (same os.link + EXDEV handling,
+    plus a safer errno check). NOTE filekit's signature is (target, link) --
+    arguments swapped here.
     """
-    if not target_path.is_file():
-        return False, "Hard links can only be created for files, not directories"
-
-    try:
-        os.link(str(target_path), str(link_path))
-        return True, None
-    except OSError as e:
-        if e.errno == 18:  # EXDEV - cross-device link
-            return False, "Hard links cannot cross filesystem boundaries"
-        return False, str(e)
-    except Exception as e:
-        return False, str(e)
+    ok = _fk_create_hardlink(target_path, link_path)
+    return (True, None) if ok else (False, "Hard link creation failed (see logs)")
 
 
 def remove_link(path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
@@ -616,33 +493,10 @@ def remove_link(path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
         return False, f"Path is not a link: {path}"
 
     link_type = detect_link_type(path)
-
-    try:
-        if link_type == LINK_TYPE_JUNCTION:
-            # Windows junction: rmdir removes junction, not target
-            os.rmdir(path)
-        elif link_type == LINK_TYPE_SOFT:
-            if path.is_dir():
-                # Directory symlink on Windows
-                os.rmdir(path)
-            else:
-                # File symlink
-                os.remove(path)
-        elif link_type == LINK_TYPE_HARD:
-            # Hard link: remove just decrements link count
-            os.remove(path)
-        else:
-            # Unknown link type, try generic removal
-            if path.is_dir():
-                os.rmdir(path)
-            else:
-                os.remove(path)
-
+    if _fk_remove_link(path):
         logger.info(f"Removed {link_type} link: {path}")
         return True, None
-
-    except Exception as e:
-        return False, str(e)
+    return False, f"Failed to remove link: {path} (see logs)"
 
 
 def verify_link(path: Union[str, Path], expected_target: Union[str, Path]) -> Tuple[bool, Optional[str]]:

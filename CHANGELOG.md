@@ -25,6 +25,16 @@ release (`docs/api-stability.md`).
     ~665-line standalone implementation is removed; filekit's verified superset
     (ported from this code, then extended) is the single home. The safedel embed
     already ran this exact delegation in production.
+  - **`links` intrinsic mechanics -> `dazzle_filekit`** (V7, R7). `is_junction`
+    (the reparse-tag fix), `detect_link_type`, `read_link_target` (kills the
+    banned `cmd /c dir /al`), the junction/symlink/hardlink creation primitives,
+    and `remove_link` now delegate down (`links.py` -146 net lines). preservelib
+    keeps the L3 link POLICY (`LinkHandlingMode`, the relational `LinkInfo`,
+    `decide_link_action`, the `create_link` orchestrator, `verify_link`) and a
+    TRANSLATING `detect_link_type` shim that preserves the on-disk manifest's
+    `'soft'`/`'hard'` vocabulary. Both delegations were verified by a body-level
+    `/move-code` conservation audit; red-green tests guard the name-map /
+    arg-order / return-shape adapters the audit surfaced.
 
 ### Notes
 - The first functional release ships as **0.8.0** (continuing the preserve
