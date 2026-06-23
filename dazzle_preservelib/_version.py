@@ -25,7 +25,7 @@ PHASE = ""  # stable patch line on the 0.8 functional release
 PROJECT_PHASE = "alpha"  # "prealpha", "alpha", "beta", "stable", or ""
 
 # Auto-updated by git hooks - do not edit manually
-__version__ = "0.8.1_main_18-20260623-767440e4"
+__version__ = "0.8.1_main_19-20260623-b4272bda"
 __app_name__ = "dazzle-preservelib"
 
 

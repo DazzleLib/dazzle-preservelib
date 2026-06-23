@@ -23,12 +23,13 @@ REPO = Path(__file__).resolve().parents[2]
 # Embedded verification: runs INSIDE the venv, from a neutral cwd. Imports the
 # installed dazzle_preservelib and asserts the artifact is whole.
 VERIFY = r'''
-import importlib, sys
+import importlib, os, sys
 import dazzle_preservelib as d
 loc = d.__file__
 assert "site-packages" in loc, f"NOT the installed wheel: {loc}"
 from dazzle_preservelib._version import PIP_VERSION
-assert PIP_VERSION == "0.8.0", f"version {PIP_VERSION} != 0.8.0"
+expect = os.environ.get("DPL_EXPECT_VERSION")
+assert expect and PIP_VERSION == expect, f"version {PIP_VERSION} != {expect}"
 
 # Public surface (curated __all__ highlights)
 for s in ["PreserveManifest","next_manifest_path","describe_manifest",
@@ -101,17 +102,24 @@ def main() -> int:
         print(f"[built] {wheel.name}")
         base_target = str(wheel)
         extra_target = f"{wheel}[dazzlelink]"
+        # Expected version comes from the repo source the wheel was built from.
+        sys.path.insert(0, str(REPO))
+        from dazzle_preservelib._version import PIP_VERSION as expect
+        sys.path.pop(0)
     else:
         base_target = f"dazzle-preservelib=={pypi_ver}"
         extra_target = f"dazzle-preservelib[dazzlelink]=={pypi_ver}"
+        expect = pypi_ver
+
+    env = {**os.environ, "DPL_EXPECT_VERSION": expect}
 
     # Base install (deps resolve from PyPI) + verify from a NEUTRAL cwd.
     run([str(py), "-m", "pip", "install", base_target])
-    run([str(py), "-c", VERIFY], cwd=str(work))
+    run([str(py), "-c", VERIFY], cwd=str(work), env=env)
 
     # Add the [dazzlelink] extra + verify the bridge round-trip.
     run([str(py), "-m", "pip", "install", extra_target])
-    run([str(py), "-c", VERIFY_BRIDGE], cwd=str(work))
+    run([str(py), "-c", VERIFY_BRIDGE], cwd=str(work), env=env)
 
     print(f"\n=== PRE-FLIGHT PASS -- clean-venv artifact verification ({'wheel' if mode_wheel else 'PyPI ' + pypi_ver}) ===")
     print(f"(throwaway venv left at {work} -- safe to delete)")
