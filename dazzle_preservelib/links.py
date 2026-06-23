@@ -466,10 +466,19 @@ def _create_hard_link(link_path: Path, target_path: Path) -> Tuple[bool, Optiona
     """
     Create a hard link at link_path pointing to the file target_path.
 
-    Delegates to dazzle_filekit.create_hardlink (same os.link + EXDEV handling,
-    plus a safer errno check). NOTE filekit's signature is (target, link) --
-    arguments swapped here.
+    Delegates the os.link mechanics to dazzle_filekit.create_hardlink (same
+    os.link + EXDEV handling, plus a safer errno check). NOTE filekit's signature
+    is (target, link) -- arguments swapped here.
+
+    L3 keeps the directory pre-check so the RETURNED error names the specific
+    reason. filekit performs the same check but only logs it (returning a bare
+    bool); preservelib's contract -- and its consumers (the preserve CLI's
+    create_link test asserts the word "files") -- expect the reason in the
+    return value. This is a user-facing POLICY message, not reimplemented
+    mechanics (the actual os.link stays delegated).
     """
+    if Path(target_path).is_dir():
+        return False, "Hard links can only be created for files, not directories"
     ok = _fk_create_hardlink(target_path, link_path)
     return (True, None) if ok else (False, "Hard link creation failed (see logs)")
 

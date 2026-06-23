@@ -58,6 +58,18 @@ release (`docs/api-stability.md`).
     and verification (`VerificationStatus`/`find_and_verify_manifest`/...) surfaces
     so no consumer loses a package-level symbol. Fixed the stale `preservelib.*`
     logger names.
+  - **Conservation fix surfaced by the preserve-CLI rewire (step 10).** Wiring
+    the real preserve CLI to consume the lifted library (preserve's full suite,
+    281 tests, now runs green against `dazzle_preservelib`) caught one behavior
+    the filekit delegation had silently dropped: `_create_hard_link` on a
+    *directory* returned a generic "Hard link creation failed (see logs)" instead
+    of the specific "Hard links can only be created for files, not directories".
+    filekit performs the same check but only LOGS the reason (returning a bare
+    bool); preservelib's contract -- and its consumers -- expect the reason in
+    the return value (the preserve CLI's `test_hard_link_directory_fails` asserts
+    the word "files"). Restored the L3 directory pre-check so the reason reaches
+    callers: a user-facing POLICY message, with the `os.link` mechanics still
+    delegated to filekit. Red-green guarded in `test_links_delegation.py`.
   - **Public surface locked + consumer-contract verified (step 7).** Audited the
     preserve CLI's real import surface (it imports at the *submodule* level --
     `from preservelib.manifest import ...`, plus `.links`/`.destination`/

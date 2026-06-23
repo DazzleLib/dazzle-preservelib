@@ -98,6 +98,24 @@ def test_create_link_hardlink_points_at_intended_file(tmp_path):
     assert link.read_text() == "payload"
 
 
+# --- Trap 4: informative error survives the filekit delegation --------------
+
+def test_hard_link_on_directory_returns_specific_reason(tmp_path):
+    """create_link(link_type='hard') on a directory must RETURN the specific
+    reason ('files'), not a generic 'creation failed'. filekit performs the same
+    check but only LOGS it (returning a bare bool); L3 keeps the pre-check so the
+    reason reaches callers. The preserve CLI's test_hard_link_directory_fails
+    asserts the word 'files' -- a conservation contract the delegation must not
+    silently drop.
+    """
+    target_dir = tmp_path / "a_directory"
+    target_dir.mkdir()
+    link = tmp_path / "the_link"
+    ok, _actual, error = create_link(link, target_dir, link_type=LINK_TYPE_HARD)
+    assert ok is False
+    assert error and "files" in error.lower()
+
+
 # --- Trap 3: symlink removal (the name-map break site) ----------------------
 
 def test_remove_link_removes_file_symlink_keeps_target(tmp_path):
