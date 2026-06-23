@@ -7,6 +7,7 @@ which track file operations, metadata, and provide support for reversibility.
 
 import os
 import sys
+import re
 import json
 import datetime
 import platform
@@ -964,7 +965,36 @@ def verify_file_hash(
     return all_match, results
 
 
-def find_available_manifests(source_path: Union[str, Path]) -> List[Tuple[int, Path, Optional[str]]]:
+def _scan_dir_for_manifests(directory: Path) -> List[Tuple[int, Path, Optional[str]]]:
+    """Scan one directory for preserve manifests (no recursion, no fallback).
+
+    Returns (number, path, description) tuples -- 0 for the unnumbered
+    ``preserve_manifest.json``, the parsed NNN for numbered ones. Unsorted.
+    """
+    manifests: List[Tuple[int, Path, Optional[str]]] = []
+
+    # Check for single manifest
+    single = directory / 'preserve_manifest.json'
+    if single.exists():
+        manifests.append((0, single, None))
+
+    # Find numbered manifests
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__(.*))?\.json')
+    for file in directory.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            num = int(match.group(1))
+            desc = match.group(2) if match.group(2) else None
+            manifests.append((num, file, desc))
+
+    return manifests
+
+
+def find_available_manifests(
+    source_path: Union[str, Path],
+    *,
+    include_preserve_subdir: bool = False,
+) -> List[Tuple[int, Path, Optional[str]]]:
     """Find all manifest files with their metadata.
 
     Returns a list of tuples: (number, path, description)
@@ -972,32 +1002,164 @@ def find_available_manifests(source_path: Union[str, Path]) -> List[Tuple[int, P
 
     Args:
         source_path: Directory to search for manifests
+        include_preserve_subdir: When True and the primary directory holds no
+            manifests, fall back to its ``.preserve/`` subdirectory (mirrors the
+            CLI's manifest discovery in ``select_manifest``). Default False
+            preserves the original single-directory behavior exactly.
 
     Returns:
         List of tuples containing (manifest_number, manifest_path, description)
         Sorted by number (0 for single manifest comes first, then numbered)
     """
-    import re
-
-    manifests = []
     source = Path(source_path)
+    manifests = _scan_dir_for_manifests(source)
 
-    # Check for single manifest
-    single = source / 'preserve_manifest.json'
-    if single.exists():
-        manifests.append((0, single, None))
-
-    # Find numbered manifests
-    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__(.*))?\.json')
-    for file in source.glob('preserve_manifest_*.json'):
-        match = pattern.match(file.name)
-        if match:
-            num = int(match.group(1))
-            desc = match.group(2) if match.group(2) else None
-            manifests.append((num, file, desc))
+    # Fallback: only when the primary dir is empty (mirrors select_manifest).
+    if not manifests and include_preserve_subdir:
+        preserve_subdir = source / '.preserve'
+        if preserve_subdir.exists():
+            manifests = _scan_dir_for_manifests(preserve_subdir)
 
     # Sort by number (0 for single manifest comes first, then numbered)
     return sorted(manifests, key=lambda x: x[0])
+
+
+def next_manifest_path(
+    dest_dir: Union[str, Path],
+    *,
+    description: Optional[str] = None,
+    migrate: bool = True,
+) -> Path:
+    """Compute where the NEXT manifest for ``dest_dir`` should be written.
+
+    The WRITE-side lifecycle counterpart to :func:`find_available_manifests`
+    (the READ side). It implements preserve's sequential-numbering scheme so
+    repeated operations against one destination never overwrite an earlier
+    manifest:
+
+    - First operation:  ``preserve_manifest.json`` (unnumbered, backward compatible)
+    - Second operation: the existing unnumbered manifest is migrated to
+      ``preserve_manifest_001.json`` and this returns ``preserve_manifest_002.json``
+    - Subsequent:       ``preserve_manifest_003.json``, ``_004``, ...
+
+    Numbering is ``max(existing) + 1`` so gaps are never reused. An optional
+    ``description`` yields ``preserve_manifest_NNN__<description>.json`` (the same
+    grammar :func:`find_available_manifests` parses).
+
+    Args:
+        dest_dir: Directory the manifest is written into. The caller decides
+            whether this is the destination root or its ``.preserve/`` subdir
+            (this function does NOT apply the ``.preserve`` fallback -- that is a
+            read-side concern).
+        description: Optional user label embedded in the numbered filename. When
+            None (the default and the CLI's current behavior), bare numbered
+            names are produced.
+        migrate: When True (default) and this is the second operation, the
+            existing unnumbered manifest is RENAMED to ``_001`` on disk. When
+            False (a read-only / scan-only caller), no rename happens -- the
+            function only predicts the path that *would* be used.
+
+    Returns:
+        The Path to write the next manifest to (the file is not created here).
+    """
+    dest = Path(dest_dir)
+    single_manifest = dest / 'preserve_manifest.json'
+
+    def _numbered(num: int) -> Path:
+        if description:
+            return dest / f'preserve_manifest_{num:03d}__{description}.json'
+        return dest / f'preserve_manifest_{num:03d}.json'
+
+    # An unnumbered manifest already exists -> this is the second operation.
+    if single_manifest.exists():
+        numbered = list(dest.glob('preserve_manifest_[0-9][0-9][0-9]*.json'))
+        if not numbered:
+            if not migrate:
+                # Read-only caller: predict _002 without touching disk.
+                return _numbered(2)
+
+            new_001 = dest / 'preserve_manifest_001.json'
+            logger.info(f"Migrating {single_manifest.name} to {new_001.name}")
+            try:
+                single_manifest.rename(new_001)
+            except Exception as e:
+                logger.error(f"Failed to migrate manifest: {e}")
+                # Fall back to creating _002 anyway.
+            return _numbered(2)
+
+    # Look for existing numbered manifests.
+    pattern = re.compile(r'preserve_manifest_(\d{3})(?:__.*)?\.json')
+    existing_numbers = []
+    for file in dest.glob('preserve_manifest_*.json'):
+        match = pattern.match(file.name)
+        if match:
+            existing_numbers.append(int(match.group(1)))
+
+    # Nothing at all -> the simple unnumbered manifest.
+    if not existing_numbers and not single_manifest.exists():
+        return single_manifest
+
+    if existing_numbers:
+        next_num = max(existing_numbers) + 1
+        return _numbered(next_num)
+
+    # Edge: single exists but couldn't be migrated and no numbered exist.
+    return _numbered(2)
+
+
+def describe_manifest(path: Union[str, Path]) -> Optional[Dict[str, Any]]:
+    """Summarize a single manifest file (read-only).
+
+    A lightweight companion to :func:`find_available_manifests`: given one
+    manifest path, parse its sequential number/description from the filename and
+    read its top-level facts (schema version, id, timestamps, operation/file
+    counts, lineage parents). Returns None if the file cannot be read as a valid
+    manifest.
+
+    Args:
+        path: Path to a manifest file.
+
+    Returns:
+        A dict of summary fields, or None if the manifest is missing/invalid.
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+
+    # Load explicitly and honor the boolean: PreserveManifest.load() returns
+    # False for a missing file, bad JSON, or an unsupported schema version. We
+    # do NOT route through read_manifest() here because its None-on-failure path
+    # is unreachable (load()'s failure is swallowed in __init__, leaving a fresh
+    # valid-but-empty default), so it would describe an empty manifest instead.
+    manifest = PreserveManifest()
+    if not manifest.load(p):
+        return None
+
+    data = manifest.to_dict()
+
+    # Parse number + description from the filename grammar.
+    number: Optional[int] = None
+    description: Optional[str] = None
+    if p.name == 'preserve_manifest.json':
+        number = 0
+    else:
+        m = re.match(r'preserve_manifest_(\d{3})(?:__(.*))?\.json', p.name)
+        if m:
+            number = int(m.group(1))
+            description = m.group(2) if m.group(2) else None
+
+    return {
+        'path': p,
+        'number': number,
+        'description': description,
+        'manifest_version': data.get('manifest_version'),
+        'manifest_id': data.get('manifest_id'),
+        'created_at': data.get('created_at'),
+        'updated_at': data.get('updated_at'),
+        'operation_count': len(data.get('operations', [])),
+        'file_count': len(data.get('files', {})),
+        'parent_ids': data.get('parent_ids', []),
+    }
 
 
 def create_manifest_for_path(path: Union[str, Path], dest_dir: Union[str, Path],

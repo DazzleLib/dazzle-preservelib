@@ -22,7 +22,10 @@ from .manifest import (
     calculate_file_hash,
     verify_file_hash,
     create_manifest_for_path,
-    read_manifest
+    read_manifest,
+    find_available_manifests,
+    next_manifest_path,
+    describe_manifest,
 )
 
 from .operations import (
@@ -129,6 +132,9 @@ __all__ = [
     'verify_file_hash',
     'create_manifest_for_path',
     'read_manifest',
+    'find_available_manifests',
+    'next_manifest_path',
+    'describe_manifest',
     
     # Operation functions
     'copy_operation',

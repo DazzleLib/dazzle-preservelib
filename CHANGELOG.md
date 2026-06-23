@@ -58,6 +58,22 @@ release (`docs/api-stability.md`).
     and verification (`VerificationStatus`/`find_and_verify_manifest`/...) surfaces
     so no consumer loses a package-level symbol. Fixed the stale `preservelib.*`
     logger names.
+  - **Manifest lifecycle pulled down to L3 (step 6).** The library now owns the
+    manifest WRITE side, not just the READ side. `next_manifest_path(dest_dir)`
+    is the sequential-numbering counterpart to `find_available_manifests`
+    (pulled down verbatim from the CLI's `get_manifest_path` numbering core):
+    first op -> `preserve_manifest.json`, second op migrates that to `_001` and
+    returns `_002`, then `max+1` so gaps are never reused. A read-only
+    `migrate=False` predicts the path without touching disk (the scan-only
+    safety property); an additive `description=` honors the `_NNN__<label>.json`
+    grammar `find_available_manifests` already parses. `find_available_manifests`
+    gained an opt-in `include_preserve_subdir=` flag reproducing
+    `select_manifest`'s `.preserve/` fallback (default off = byte-identical to
+    before). New `describe_manifest(path)` returns a read-only single-manifest
+    summary (number/description/schema/id/timestamps/file+op counts/parents);
+    it detects missing/corrupt files directly via `PreserveManifest.load()`'s
+    boolean rather than through `read_manifest` (whose None-on-failure path is
+    unreachable). Red-green verified the `migrate=False` no-rename guard.
   - **`[dazzlelink]` bridge rewired to `dazzle_linklib` (step 5b).** Per the meshing
     DWP, the bridge is a thin adapter over the lib's RECORD API: it builds
     `DazzleLinkData` records and writes/reads them via `export_link`/`import_link`/
