@@ -40,6 +40,18 @@ release (`docs/api-stability.md`).
     by both"); preservelib keeps thin wrappers preserving its exact signature
     (incl. the no-op `manifest`/`progress_callback` stubs -- verified unused by
     any consumer) and delegates the computation down. Dead `hashlib` import removed.
+  - **disk-space STAYS at L3 (not delegated).** A body-audit revised the planned
+    delegation: preservelib's `check_disk_space` (3-state `OK`/`SOFT_WARNING`/
+    `HARD_FAIL` logic) and `InsufficientSpaceError` (attr `destination`, which the
+    CLI's error handler reads) are preserve-specific, NOT filekit duplicates --
+    delegating would have lost the smart logic and broken the CLI. Kept verbatim.
+  - **Removed the `sys.path.insert`/`append` dev-fallback hacks** in
+    `operations.py` + `restore.py` (V5): `dazzle-filekit` is a declared dependency,
+    so its primitives import directly and a missing dep fails loud instead of
+    silently degrading to `None`.
+  - **Removed the dead `from preserve.output import get_formatter`** upward CLI
+    coupling in `operations.py` (it was unreachable -- nested in a contradictory
+    `if formatter is None` inside `if formatter:`).
 
 ### Notes
 - The first functional release ships as **0.8.0** (continuing the preserve

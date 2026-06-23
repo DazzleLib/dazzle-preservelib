@@ -12,22 +12,10 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Set, Tuple
 
-# Import from dazzle_filekit if available, otherwise use local imports
-try:
-    from dazzle_filekit import paths, operations, verification
-except ImportError:
-    # Local imports for development/testing
-    from pathlib import Path
-    import sys
-
-    sys.path.append(str(Path(__file__).parent.parent.parent))
-    try:
-        from dazzle_filekit import paths, operations, verification
-    except ImportError:
-        # Fallbacks for testing
-        paths = None
-        operations = None
-        verification = None
+# dazzle-filekit (L1) is a declared dependency: import its primitives directly.
+# (V5: the old sys.path.append dev-fallback + None stubs are removed -- a missing
+# hard dependency should fail loud at import, not silently degrade to None.)
+from dazzle_filekit import paths, operations, verification
 
 from .manifest import PreserveManifest, calculate_file_hash, verify_file_hash
 from .metadata import collect_file_metadata, apply_file_metadata
@@ -2092,14 +2080,12 @@ def restore_operation(
 
     options = default_options
 
-    # Get formatter if provided
+    # Get formatter if provided. (V5/upward-coupling: the old
+    # `preserve.output.get_formatter` global fallback was dead code -- guarded by
+    # a contradictory `if formatter is None` nested inside `if formatter:` so it
+    # never ran -- and it reached UP into the preserve CLI. Removed; a provided
+    # formatter is used directly.)
     formatter = options.get('formatter')
-    if formatter:
-        # Import here to avoid circular dependencies
-        from preserve.output import get_formatter
-        # If no formatter provided, get the global one
-        if formatter is None:
-            formatter = get_formatter()
 
     # Initialize operation result
     result = OperationResult("RESTORE", command_line)

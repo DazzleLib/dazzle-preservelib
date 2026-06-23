@@ -12,21 +12,9 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Set, Tuple
 
-# Import from dazzle_filekit if available, otherwise use local imports
-try:
-    from dazzle_filekit import paths, operations, verification
-except ImportError:
-    # Local imports for development/testing
-    from pathlib import Path
-    import sys
-    sys.path.append(str(Path(__file__).parent.parent.parent))
-    try:
-        from dazzle_filekit import paths, operations, verification
-    except ImportError:
-        # Fallbacks for testing
-        paths = None
-        operations = None
-        verification = None
+# dazzle-filekit (L1) is a declared dependency: import its primitives directly.
+# (V5: the old sys.path.append dev-fallback + None stubs are removed.)
+from dazzle_filekit import paths, operations, verification
 
 from .manifest import PreserveManifest
 from .metadata import apply_file_metadata
