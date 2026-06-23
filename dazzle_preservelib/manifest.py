@@ -8,7 +8,6 @@ which track file operations, metadata, and provide support for reversibility.
 import os
 import sys
 import json
-import hashlib
 import datetime
 import platform
 import logging
@@ -16,6 +15,16 @@ import socket
 import uuid
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, Set, Tuple
+
+# L1 delegation: hashing is a shared primitive whose canonical home is
+# dazzle-filekit (filekit's verification.py is "the core implementation used by
+# both dazzle_filekit and preservelib"). preservelib keeps thin wrappers that
+# preserve its exact signature (incl. the no-op manifest/progress_callback stubs)
+# and delegate the computation down. Body-audited identical/superset 2026-06-22.
+from dazzle_filekit.verification import (
+    calculate_file_hash as _fk_calculate_file_hash,
+    verify_file_hash as _fk_verify_file_hash,
+)
 
 # Set up module-level logger
 logger = logging.getLogger(__name__)
@@ -907,57 +916,18 @@ def calculate_file_hash(
     Returns:
         Dictionary mapping algorithm names to hash values
     """
-    if algorithms is None:
-        algorithms = ["SHA256"]
-
-    path = Path(file_path)
-    if not path.exists() or not path.is_file():
-        logger.warning(f"Cannot calculate hash for non-existent file: {path}")
-        return {}
-
-    result = {}
-    hash_objects = {}
-
-    # Report progress if callback provided
+    # Delegates the computation to dazzle_filekit.verification (the shared L1 home
+    # -- byte-identical implementation). preservelib's signature is preserved:
+    # progress_callback is invoked for logging parity, and the manifest parameter
+    # remains the no-op stub it always was.
     if progress_callback:
         progress_callback(f"Calculating hash for {file_path}")
 
-    # Initialize hash objects
-    for algorithm in algorithms:
-        alg = algorithm.lower()
-        if alg == "md5":
-            hash_objects[algorithm] = hashlib.md5()
-        elif alg == "sha1":
-            hash_objects[algorithm] = hashlib.sha1()
-        elif alg == "sha256":
-            hash_objects[algorithm] = hashlib.sha256()
-        elif alg == "sha512":
-            hash_objects[algorithm] = hashlib.sha512()
-        else:
-            logger.warning(f"Unsupported hash algorithm: {algorithm}")
-            continue
+    result = _fk_calculate_file_hash(file_path, algorithms, buffer_size)
 
-    try:
-        # Read file in chunks and update all hash objects
-        with open(path, 'rb') as f:
-            while chunk := f.read(buffer_size):
-                for hash_obj in hash_objects.values():
-                    hash_obj.update(chunk)
-
-        # Get hash values
-        for algorithm, hash_obj in hash_objects.items():
-            result[algorithm] = hash_obj.hexdigest()
-
-    except Exception as e:
-        logger.error(f"Error calculating hash for {path}: {e}")
-
-    # Record in manifest if provided (preserve-specific feature)
+    # Record in manifest if provided (preserve-specific stub -- unimplemented).
     if manifest and result:
-        try:
-            # This is a preserve-specific feature
-            logger.debug(f"Recording hash calculation in manifest for {file_path}")
-        except Exception as e:
-            logger.warning(f"Failed to record hash in manifest: {e}")
+        logger.debug(f"Recording hash calculation in manifest for {file_path}")
 
     return result
 
@@ -981,38 +951,15 @@ def verify_file_hash(
         Tuple of (overall_success, details) where details is a dictionary mapping
         algorithm names to tuples of (success, expected_hash, actual_hash)
     """
-    if not expected_hashes:
-        logger.warning(f"No expected hashes provided for {file_path}")
-        return False, {}
+    # Delegates to dazzle_filekit.verification.verify_file_hash (identical
+    # implementation -- same case-insensitive compare, same (match, expected, actual)
+    # detail tuples). preservelib's signature is preserved; the manifest parameter
+    # remains the no-op stub it always was.
+    all_match, results = _fk_verify_file_hash(file_path, expected_hashes)
 
-    # Calculate actual hashes
-    actual_hashes = calculate_file_hash(file_path, list(expected_hashes.keys()))
-
-    if not actual_hashes:
-        logger.warning(f"Failed to calculate hashes for {file_path}")
-        return False, {}
-
-    # Compare hashes
-    results = {}
-    all_match = True
-
-    for algorithm, expected in expected_hashes.items():
-        if algorithm not in actual_hashes:
-            results[algorithm] = (False, expected, None)
-            all_match = False
-        else:
-            actual = actual_hashes[algorithm]
-            match = expected.lower() == actual.lower()
-            results[algorithm] = (match, expected, actual)
-            if not match:
-                all_match = False
-
-    # Record in manifest if provided (preserve-specific feature)
+    # Record in manifest if provided (preserve-specific stub -- unimplemented).
     if manifest:
-        try:
-            logger.debug(f"Recording verification result in manifest for {file_path}: {all_match}")
-        except Exception as e:
-            logger.warning(f"Failed to record verification in manifest: {e}")
+        logger.debug(f"Recording verification result in manifest for {file_path}: {all_match}")
 
     return all_match, results
 

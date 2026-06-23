@@ -35,6 +35,11 @@ release (`docs/api-stability.md`).
     `'soft'`/`'hard'` vocabulary. Both delegations were verified by a body-level
     `/move-code` conservation audit; red-green tests guard the name-map /
     arg-order / return-shape adapters the audit surfaced.
+  - **hashing (`calculate_file_hash` / `verify_file_hash`) -> `dazzle_filekit.verification`.**
+    Body-audited identical/superset (filekit's is "the core implementation used
+    by both"); preservelib keeps thin wrappers preserving its exact signature
+    (incl. the no-op `manifest`/`progress_callback` stubs -- verified unused by
+    any consumer) and delegates the computation down. Dead `hashlib` import removed.
 
 ### Notes
 - The first functional release ships as **0.8.0** (continuing the preserve
