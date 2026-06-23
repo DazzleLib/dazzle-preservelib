@@ -5,18 +5,60 @@ fails, a consumer somewhere breaks: do NOT silently fix the test -- follow
 the api-stability.md process (deprecate with a noisy shim, register it,
 slate removal).
 
-The locked surface is intentionally minimal at the scaffold stage (version
-exports only). The manifest/operations/verification surface joins this canary
-at the 0.8.0 extraction release.
+The package-level public surface (curated `__all__`) is locked as of the
+0.8.x extraction completion. The SUBMODULE-level contract the preserve CLI
+actually imports against is locked separately and more precisely in
+`tests/test_consumer_import_surface.py` (the CLI imports
+`from preservelib.manifest import ...`, which `__all__` alone does not cover).
 """
 
 import importlib
 
 LOCKED_SURFACE = {
     "dazzle_preservelib": [
+        # Version
         "__version__",
         "__app_name__",
         "PIP_VERSION",
+        # Logging
+        "configure_logging",
+        "enable_verbose_logging",
+        # Manifest (incl. the step-6 lifecycle pull-down)
+        "PreserveManifest",
+        "calculate_file_hash",
+        "verify_file_hash",
+        "create_manifest_for_path",
+        "read_manifest",
+        "find_available_manifests",
+        "next_manifest_path",
+        "describe_manifest",
+        # Operations
+        "copy_operation",
+        "move_operation",
+        "verify_operation",
+        "restore_operation",
+        # Metadata
+        "collect_file_metadata",
+        "apply_file_metadata",
+        "compare_metadata",
+        # Restore
+        "restore_file_to_original",
+        "restore_files_from_manifest",
+        "find_restoreable_files",
+        # Destination awareness
+        "FileCategory",
+        "ConflictResolution",
+        "FileComparison",
+        "DestinationScanResult",
+        "compare_files",
+        "scan_destination",
+        # Verification
+        "VerificationStatus",
+        "FileVerificationResult",
+        "VerificationResult",
+        "verify_file_against_manifest",
+        "verify_files_against_manifest",
+        "find_and_verify_manifest",
     ],
 }
 

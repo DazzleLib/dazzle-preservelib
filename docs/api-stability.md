@@ -21,16 +21,28 @@ locked symbols and fails if any disappears or moves.
    the `.dazzlelink` record (L2 `dazzle-linklib`). Pulling one of those into L3
    is an architecture change, not a code-review comment.
 
-## Locked surface (scaffold)
+## Locked surface
 
-| Module | Symbols |
-|---|---|
-| `dazzle_preservelib` (re-exports) | `__version__`, `__app_name__`, `PIP_VERSION` |
+Two complementary guards, both run by the suite:
 
-The manifest/operations/verification/destination surface (`PreserveManifest`,
-`copy_operation` / `move_operation` / `restore_operation` / `verify_operation`,
-`scan_destination`, the verification types, link **policy**) joins this table at
-the **0.8.0** extraction release.
+1. **Package-level public API** (`tests/test_import_stability.py`) — the curated
+   `__all__`: version exports, logging, the manifest surface (incl. the step-6
+   lifecycle `find_available_manifests` / `next_manifest_path` /
+   `describe_manifest`), `copy_operation` / `move_operation` /
+   `restore_operation` / `verify_operation`, the metadata + restore helpers, the
+   destination-awareness types (`FileCategory` / `ConflictResolution` /
+   `scan_destination` / …), and the verification types
+   (`VerificationStatus` / `find_and_verify_manifest` / …).
+2. **Consumer import contract** (`tests/test_consumer_import_surface.py`) — the
+   *submodule* symbols the preserve CLI imports directly
+   (`from dazzle_preservelib.manifest import …`, `.links` policy, `.destination`,
+   `.path_warnings`, `.operations`, `.metadata`, `.dazzlelink`). This is the
+   precise drop-in contract; `__all__` does not cover submodule imports.
+
+The surface is **locked as of the 0.8.x extraction completion**. The final
+PHASE drop to a stable **0.8.0** (and the PyPI publish it triggers) is the
+single reviewed release milestone; the locks above already guard the surface
+through the remaining alpha PATCH iterations.
 
 ## Upstream dependencies
 

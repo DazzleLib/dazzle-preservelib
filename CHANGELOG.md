@@ -58,6 +58,20 @@ release (`docs/api-stability.md`).
     and verification (`VerificationStatus`/`find_and_verify_manifest`/...) surfaces
     so no consumer loses a package-level symbol. Fixed the stale `preservelib.*`
     logger names.
+  - **Public surface locked + consumer-contract verified (step 7).** Audited the
+    preserve CLI's real import surface (it imports at the *submodule* level --
+    `from preservelib.manifest import ...`, plus `.links`/`.destination`/
+    `.path_warnings`/`.operations`/`.metadata`/`.dazzlelink`) and confirmed
+    `dazzle_preservelib` is a verified drop-in: every CLI import resolves
+    against the lifted library. Two guards now lock this:
+    `tests/test_import_stability.py` (expanded from version-only to the full
+    curated `__all__`) and a new `tests/test_consumer_import_surface.py` that
+    replicates the CLI's exact import statements. `verify_source_against_manifest`
+    is deliberately excluded -- the CLI imports it under `try/except` with a
+    `verify_three_way` fallback, so it was never part of the canonical contract
+    (no conservation loss). The surface is locked as of the 0.8.x extraction
+    completion; the final PHASE drop to stable 0.8.0 + PyPI publish is the single
+    reviewed release milestone.
   - **Manifest lifecycle pulled down to L3 (step 6).** The library now owns the
     manifest WRITE side, not just the READ side. `next_manifest_path(dest_dir)`
     is the sequential-numbering counterpart to `find_available_manifests`
