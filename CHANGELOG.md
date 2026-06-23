@@ -12,6 +12,18 @@ for the `preserve` CLI (its full suite runs green against this library). The
 public surface locks here (`docs/api-stability.md`). Continues the preserve
 lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages.
 
+## [0.8.1] -- 2026-06-23
+
+### Added
+- **`InsufficientSpaceError.source`** -- an additive where-FROM field so a
+  disk-space failure can report both ends ("not enough room at DEST to copy
+  FROM SRC"). Defaults to `None` and never displaces `destination` (the preserve
+  CLI's `except ... as e: e.destination` is unaffected); when known, the source
+  is surfaced in the message too. `copy_operation`/`move_operation` populate it
+  from `options["source_base"]` or the common parent of the source files (new
+  `_representative_source` helper). Closes the enrichment that the bridge DWP
+  had deferred to Quick Notes but never actually recorded there.
+
 ## [0.8.0] -- 2026-06-23
 
 ### Added

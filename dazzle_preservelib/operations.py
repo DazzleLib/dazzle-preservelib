@@ -33,16 +33,28 @@ logger = logging.getLogger(__name__)
 
 
 class InsufficientSpaceError(Exception):
-    """Raised when destination doesn't have enough disk space."""
+    """Raised when destination doesn't have enough disk space.
 
-    def __init__(self, required: int, available: int, destination: str):
+    Carries the failed operation's space facts. ``source`` is additive context
+    (default ``None``): the where-FROM of the operation, so a handler can report
+    both ends ("not enough room at DEST to copy FROM SRC"). It defaults to None
+    and never displaces ``destination`` -- existing callers and the CLI's
+    ``except ... as e: e.destination`` are unaffected.
+    """
+
+    def __init__(self, required: int, available: int, destination: str,
+                 source: Optional[str] = None):
         self.required = required
         self.available = available
         self.destination = destination
-        super().__init__(
+        self.source = source
+        message = (
             f"Insufficient disk space at '{destination}': "
             f"need {_format_size(required)}, only {_format_size(available)} available"
         )
+        if source:
+            message += f" (copying from '{source}')"
+        super().__init__(message)
 
 
 class PermissionCheckError(Exception):
@@ -70,6 +82,30 @@ def _format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024 * 1024):.2f} TB"
+
+
+def _representative_source(
+    source_files: List[Union[str, Path]],
+    source_base: Optional[Union[str, Path]] = None,
+) -> Optional[str]:
+    """Best single where-FROM string for error reporting (additive context).
+
+    Prefers an explicit ``source_base``; else the common parent of the source
+    files; else the single file; else None. Never raises -- it only enriches a
+    message.
+    """
+    if source_base:
+        return str(source_base)
+    paths = [str(p) for p in source_files]
+    if not paths:
+        return None
+    if len(paths) == 1:
+        return paths[0]
+    try:
+        return os.path.commonpath(paths)
+    except ValueError:
+        # No common path (e.g. different drives on Windows).
+        return paths[0]
 
 
 def calculate_total_size(source_files: List[Union[str, Path]]) -> int:
@@ -921,7 +957,10 @@ def copy_operation(
                 _, recommended, available, _ = check_disk_space(
                     dest_base, total_size, safety_margin=options["space_safety_margin"]
                 )
-                raise InsufficientSpaceError(total_size, available, str(dest_base))
+                raise InsufficientSpaceError(
+                    total_size, available, str(dest_base),
+                    source=_representative_source(source_files, options.get("source_base")),
+                )
             # For other permission issues on COPY, we can warn and continue
             if hard_issues:
                 logger.warning("COPY operation continuing despite permission warnings (source files preserved)")
@@ -1832,7 +1871,10 @@ def move_operation(
                 _, recommended, available, _ = check_disk_space(
                     dest_base, total_size, safety_margin=options["space_safety_margin"]
                 )
-                raise InsufficientSpaceError(total_size, available, str(dest_base))
+                raise InsufficientSpaceError(
+                    total_size, available, str(dest_base),
+                    source=_representative_source(source_files, options.get("source_base")),
+                )
 
             # If it's a permission issue, raise PermissionCheckError
             perm_issues = [i for i in hard_issues if "Cannot" in i or "Permission" in i.lower()]

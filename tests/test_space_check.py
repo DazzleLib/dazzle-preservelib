@@ -25,7 +25,43 @@ from dazzle_preservelib.operations import (
     InsufficientSpaceError,
     PermissionCheckError,
     _format_size,
+    _representative_source,
 )
+
+
+class TestInsufficientSpaceErrorSource(unittest.TestCase):
+    """The additive `source` field on InsufficientSpaceError (0.8.1)."""
+
+    def test_backward_compatible_without_source(self):
+        """Existing 3-arg construction still works: source is None, destination
+        is intact (the CLI reads e.destination), message unchanged."""
+        e = InsufficientSpaceError(100, 50, "D:/dest")
+        self.assertIsNone(e.source)
+        self.assertEqual(e.destination, "D:/dest")
+        self.assertIn("D:/dest", str(e))
+        self.assertNotIn("copying from", str(e))
+
+    def test_source_enriches_attr_and_message(self):
+        """When provided, source is carried AND surfaced in the message --
+        without displacing destination."""
+        e = InsufficientSpaceError(100, 50, "D:/dest", source="C:/src")
+        self.assertEqual(e.source, "C:/src")
+        self.assertEqual(e.destination, "D:/dest")  # not displaced
+        self.assertIn("copying from 'C:/src'", str(e))
+
+    def test_representative_source_prefers_base(self):
+        self.assertEqual(
+            _representative_source(["C:/a/1.txt", "C:/a/2.txt"], source_base="C:/a"),
+            "C:/a",
+        )
+
+    def test_representative_source_common_parent(self):
+        got = _representative_source(["C:/a/1.txt", "C:/a/2.txt"])
+        self.assertEqual(Path(got), Path("C:/a"))
+
+    def test_representative_source_single_and_empty(self):
+        self.assertEqual(_representative_source(["C:/a/only.txt"]), "C:/a/only.txt")
+        self.assertIsNone(_representative_source([]))
 
 
 class TestFormatSize(unittest.TestCase):
