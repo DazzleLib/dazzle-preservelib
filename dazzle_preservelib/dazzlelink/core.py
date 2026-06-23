@@ -157,146 +157,40 @@ def ensure_dazzlelink_extension(file_path: Union[str, Path]) -> Path:
     
     return path_obj
 
-# Check if dazzlelink is available
+# The bridge consumes the dazzle-linklib (L2) RECORD API. It is the optional
+# `[dazzlelink]` extra (V5: no bundled-path sys.path fallback). Note the lib's
+# `create_link` makes an OS SYMLINK -- the bridge "writes a .dazzlelink" via
+# `export_link` (record file), never `create_link` (see the meshing DWP).
 HAVE_DAZZLELINK = False
 try:
-    import dazzlelink
+    import dazzle_linklib
+    from dazzle_linklib import (
+        DazzleLinkData,
+        export_link,
+        import_link,
+        find_dazzlelinks as _ll_find_dazzlelinks,
+        scan as _ll_scan,
+    )
     HAVE_DAZZLELINK = True
-    logger.debug("Dazzlelink module available, using full implementation")
+    logger.debug("dazzle-linklib available, dazzlelink integration enabled")
 except ImportError:
-    # Try with the bundled version
-    try:
-        import sys
-        from pathlib import Path
-        # Look for bundled dazzlelink in parent directory of preservelib
-        bundled_path = Path(__file__).parent.parent.parent / 'dazzlelink'
-        if bundled_path.exists() and str(bundled_path) not in sys.path:
-            sys.path.insert(0, str(bundled_path))
-        import dazzlelink
-        HAVE_DAZZLELINK = True
-        logger.debug("Bundled dazzlelink module available, using full implementation")
-    except ImportError:
-        logger.debug("Dazzlelink module not available, using simplified implementation")
+    logger.debug("dazzle-linklib not available; dazzlelink integration disabled")
 
 
 def is_available() -> bool:
     """
     Check if dazzlelink integration is available.
-    
+
     Returns:
-        True if dazzlelink is available, False otherwise
+        True if dazzle-linklib (the [dazzlelink] extra) is available, else False
     """
     return HAVE_DAZZLELINK
 
 
-class SimpleDazzleLinkData:
-    """
-    A simplified version of dazzlelink's DazzleLinkData class.
-    Used when the dazzlelink library is not available.
-    """
-    
-    def __init__(self):
-        """Initialize the data structure."""
-        self.data = {
-            "original_path": None,
-            "target_path": None,
-            "created_at": datetime.datetime.now().isoformat(),
-            "timestamps": {
-                "created": None,
-                "modified": None,
-                "accessed": None
-            },
-            "metadata": {},
-            "config": {
-                "default_mode": "info"  # Default mode for dazzlelink execution
-            }
-        }
-    
-    def set_original_path(self, path: str) -> None:
-        """Set the original path."""
-        self.data["original_path"] = path
-    
-    def set_target_path(self, path: str) -> None:
-        """Set the target path."""
-        self.data["target_path"] = path
-    
-    def get_original_path(self) -> Optional[str]:
-        """Get the original path."""
-        return self.data["original_path"]
-    
-    def get_target_path(self) -> Optional[str]:
-        """Get the target path."""
-        return self.data["target_path"]
-    
-    def get_creation_date(self) -> str:
-        """Get the creation date."""
-        return self.data["created_at"]
-    
-    def set_link_timestamps(self, **kwargs) -> None:
-        """Set link timestamps."""
-        for key, value in kwargs.items():
-            if key in self.data["timestamps"]:
-                self.data["timestamps"][key] = value
-    
-    def get_link_timestamps(self) -> Dict[str, Any]:
-        """Get link timestamps."""
-        return self.data["timestamps"]
-        
-    def set_default_mode(self, mode: str) -> None:
-        """Set the default execution mode."""
-        if "config" not in self.data:
-            self.data["config"] = {}
-        self.data["config"]["default_mode"] = mode
-        
-    def get_default_mode(self) -> str:
-        """Get the default execution mode."""
-        if "config" in self.data and "default_mode" in self.data["config"]:
-            return self.data["config"]["default_mode"]
-        return "info"  # Default to info mode
-    
-    def to_json(self) -> str:
-        """Convert data to JSON string."""
-        return json.dumps(self.data, indent=2)
-    
-    @classmethod
-    def from_json(cls, json_str: str) -> 'SimpleDazzleLinkData':
-        """Create instance from JSON string."""
-        instance = cls()
-        try:
-            instance.data = json.loads(json_str)
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON in dazzlelink data")
-        return instance
-    
-    @classmethod
-    def from_file(cls, path: str) -> 'SimpleDazzleLinkData':
-        """Load from a file."""
-        instance = cls()
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                instance.data = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
-            logger.error(f"Error loading dazzlelink data from {path}: {e}")
-        return instance
-    
-    def save_to_file(self, path: str, make_executable: bool = False) -> bool:
-        """Save to a file."""
-        try:
-            # Create parent directory if it doesn't exist
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=2)
-            
-            if make_executable and sys.platform != 'win32':
-                # Make file executable on Unix-like systems
-                mode = os.stat(path).st_mode
-                os.chmod(path, mode | 0o111)  # Add executable bit
-            
-            return True
-        except Exception as e:
-            logger.error(f"Error saving dazzlelink data to {path}: {e}")
-            return False
+# SimpleDazzleLinkData (the no-dazzlelink fallback record) is DELETED -- its
+# interface was a strict subset of dazzle_linklib.DazzleLinkData, which is now a
+# hard requirement of the [dazzlelink] extra. The bridge builds DazzleLinkData
+# records and (de)serializes them via export_link / import_link.
 
 
 def create_dazzlelink(
@@ -457,67 +351,27 @@ def create_dazzlelink(
                 # Create link alongside destination
                 link_path = Path(str(dest_path) + '.dazzlelink')
             
-            # Create the dazzlelink using the real library
-            if hasattr(dazzlelink, 'create_link'):
-                # Use the function directly if available
-                logger.debug(f"[DEBUG] Calling dazzlelink.create_link with source={source_path}, link_path={link_path}, mode={mode}")
-                dazzlelink_path = dazzlelink.create_link(str(source_path), str(link_path), mode=mode)
-                logger.debug(f"[DEBUG] Created dazzlelink with create_link function: {dazzlelink_path} -> {source_path}")
-                
-                # Use helper function to ensure proper extension
-                result_path = ensure_dazzlelink_extension(dazzlelink_path)
-                return result_path
-                
-            elif hasattr(dazzlelink, 'export_link'):
-                # Use export_link function if available (newer versions)
-                logger.debug(f"[DEBUG] Calling dazzlelink.export_link with source={source_path}, link_path={link_path}, mode={mode}")
-                dazzlelink_path = dazzlelink.export_link(str(source_path), str(link_path), mode=mode)
-                logger.debug(f"[DEBUG] Created dazzlelink with export_link function: {dazzlelink_path} -> {source_path}")
-                
-                # Use helper function to ensure proper extension
-                result_path = ensure_dazzlelink_extension(dazzlelink_path)
-                return result_path
-                
-            elif hasattr(dazzlelink, 'DazzleLink'):
-                # Use the class if the functions aren't available
-                dl = dazzlelink.DazzleLink()
-                # Check which method is available (API evolved over time)
-                if hasattr(dl, 'serialize_link'):
-                    logger.debug(f"[DEBUG] Calling DazzleLink.serialize_link with link_path={source_path}, output_path={link_path}, mode={mode}")
-                    dazzlelink_path = dl.serialize_link(
-                        link_path=str(source_path),
-                        output_path=str(link_path),
-                        require_symlink=False,
-                        mode=mode
-                    )
-                    logger.debug(f"[DEBUG] DazzleLink.serialize_link returned: {dazzlelink_path}")
-                    
-                    # Use helper function to ensure proper extension
-                    result_path = ensure_dazzlelink_extension(dazzlelink_path)
-                    dazzlelink_path = str(result_path)
-                    
-                elif hasattr(dl, 'create_dazzlelink'):
-                    logger.debug(f"[DEBUG] Calling DazzleLink.create_dazzlelink with target={source_path}, output_path={link_path}, mode={mode}")
-                    dazzlelink_path = dl.create_dazzlelink(
-                        target=str(source_path),
-                        output_path=str(link_path),
-                        mode=mode
-                    )
-                    logger.debug(f"[DEBUG] DazzleLink.create_dazzlelink returned: {dazzlelink_path}")
-                    
-                    # Use helper function to ensure proper extension
-                    result_path = ensure_dazzlelink_extension(dazzlelink_path)
-                    dazzlelink_path = str(result_path)
-                    
-                else:
-                    logger.warning("DazzleLink class found but missing expected methods")
-                    raise AttributeError("DazzleLink API mismatch")
-                    
-                logger.debug(f"[DEBUG] Created dazzlelink with DazzleLink class: {dazzlelink_path} -> {source_path}")
-                return Path(dazzlelink_path)
-            else:
-                logger.warning("Dazzlelink library found but API is different than expected")
-                raise AttributeError("Dazzlelink API mismatch")
+            # Build a dazzle_linklib record and WRITE the .dazzlelink file via
+            # export_link. (NOT create_link -- the lib's create_link makes an OS
+            # symlink; see the meshing DWP.) original_path = the source file;
+            # target_path = the preserved destination.
+            dl_data = DazzleLinkData()
+            dl_data.set_original_path(str(source_path))
+            dl_data.set_target_path(str(dest_path))
+            dl_data.set_default_mode(mode)
+            try:
+                _st = Path(source_path).stat()
+                dl_data.set_link_timestamps(
+                    created=_st.st_ctime, modified=_st.st_mtime, accessed=_st.st_atime
+                )
+            except (FileNotFoundError, PermissionError):
+                pass
+            logger.debug(
+                f"[DEBUG] Writing dazzlelink record to {link_path} "
+                f"(source={source_path}, target={dest_path}, mode={mode})"
+            )
+            export_link(dl_data, str(link_path))
+            return ensure_dazzlelink_extension(link_path)
         except Exception as e:
             logger.warning(f"Error using dazzlelink library, falling back to simplified implementation: {e}")
             # Fall through to the simplified implementation
@@ -648,12 +502,12 @@ def create_dazzlelink(
             # Create link alongside destination
             link_path = Path(str(dest_path) + '.dazzlelink')
         
-        # Create and save the dazzlelink data
-        dl_data = SimpleDazzleLinkData()
+        # Create and save the dazzlelink record (dazzle_linklib).
+        dl_data = DazzleLinkData()
         dl_data.set_original_path(str(source_path))
         dl_data.set_target_path(str(dest_path))
         dl_data.set_default_mode(mode)  # Set the requested execution mode
-        
+
         # Try to collect file stats for timestamps
         try:
             source_stat = Path(source_path).stat()
@@ -664,11 +518,11 @@ def create_dazzlelink(
             )
         except (FileNotFoundError, PermissionError):
             pass  # Ignore errors
-        
-        # Save the dazzlelink
-        logger.debug(f"[DEBUG] Saving simplified dazzlelink to file: {link_path}")
-        dl_data.save_to_file(str(link_path))
-        logger.debug(f"[DEBUG] Created simplified dazzlelink: {link_path} -> {source_path}")
+
+        # Write the dazzlelink record (export_link == record.save_to_file).
+        logger.debug(f"[DEBUG] Writing dazzlelink record to file: {link_path}")
+        export_link(dl_data, str(link_path))
+        logger.debug(f"[DEBUG] Created dazzlelink: {link_path} -> {source_path}")
         return link_path
         
     except Exception as e:
@@ -694,34 +548,13 @@ def find_dazzlelinks_in_dir(
     """
     if HAVE_DAZZLELINK:
         try:
-            # Try different API versions
-            if hasattr(dazzlelink, 'find_dazzlelinks'):
-                # Use direct function if available
-                return [Path(p) for p in dazzlelink.find_dazzlelinks(
-                    [str(directory)], 
-                    recursive=recursive, 
-                    pattern=pattern
-                )]
-            elif hasattr(dazzlelink, 'DazzleLink'):
-                # Try using the DazzleLink class
-                dl = dazzlelink.DazzleLink()
-                if hasattr(dl, 'find_dazzlelinks'):
-                    return [Path(p) for p in dl.find_dazzlelinks(
-                        [str(directory)],
-                        recursive=recursive,
-                        pattern=pattern
-                    )]
-            elif hasattr(dazzlelink, 'scan') and callable(dazzlelink.scan):
-                # Newer versions might use scan
-                return [Path(p) for p in dazzlelink.scan(
-                    str(directory),
-                    recursive=recursive
-                ) if Path(p).match(pattern)]
-            else:
-                logger.warning("Dazzlelink library found but find_dazzlelinks not available")
-                # Fall through to the simplified implementation
+            return [Path(p) for p in _ll_find_dazzlelinks(
+                [str(directory)],
+                recursive=recursive,
+                pattern=pattern,
+            )]
         except Exception as e:
-            logger.warning(f"Error using dazzlelink library to find links, falling back to simplified implementation: {e}")
+            logger.warning(f"Error using dazzle-linklib to find links, falling back to glob: {e}")
     
     # Use simplified implementation
     try:
@@ -759,43 +592,18 @@ def restore_from_dazzlelink(
     Returns:
         Path to the original file location, or None if restoration failed
     """
-    if HAVE_DAZZLELINK:
-        try:
-            # Try different API versions
-            if hasattr(dazzlelink, 'import_link'):
-                # Newer versions use import_link
-                return Path(dazzlelink.import_link(
-                    str(dazzlelink_path),
-                    target_location=str(target_location) if target_location else None
-                ))
-            elif hasattr(dazzlelink, 'DazzleLink'):
-                # Try using the DazzleLink class
-                dl = dazzlelink.DazzleLink()
-                if hasattr(dl, 'deserialize_link'):
-                    return Path(dl.deserialize_link(
-                        str(dazzlelink_path),
-                        target_location=str(target_location) if target_location else None
-                    ))
-                else:
-                    logger.warning("DazzleLink class found but missing deserialize_link method")
-                    raise AttributeError("DazzleLink API mismatch")
-            else:
-                logger.warning("Dazzlelink library found but API is different than expected")
-                raise AttributeError("Dazzlelink API mismatch")
-        except Exception as e:
-            logger.warning(f"Error using dazzlelink library to restore link, falling back to simplified implementation: {e}")
-    
-    # Use simplified implementation
+    # Read the .dazzlelink record and return the ORIGINAL path (the documented
+    # contract -- this reads, it does not recreate the file; the CLI / the lib's
+    # recreate_link handle materialization). The lib's import_link reads the
+    # record (does not recreate), matching this contract. `target_location` is
+    # accepted for signature compatibility but unused on the read path (as the
+    # prior simplified implementation also ignored it).
     try:
-        # Load dazzlelink data
-        dl_data = SimpleDazzleLinkData.from_file(str(dazzlelink_path))
-        original_path = dl_data.get_original_path()
-        
+        record = import_link(str(dazzlelink_path))
+        original_path = record.get_original_path()
         if not original_path:
             logger.error(f"No original path in dazzlelink: {dazzlelink_path}")
             return None
-        
-        # Return the original path
         return Path(original_path)
     except Exception as e:
         logger.error(f"Error restoring from dazzlelink: {e}")
@@ -833,28 +641,12 @@ def dazzlelink_to_manifest(
     # Process each dazzlelink
     for i, dl_path in enumerate(dazzlelink_paths):
         try:
-            # Load dazzlelink data
-            dl_data = None
-            
-            if HAVE_DAZZLELINK and hasattr(dazzlelink, 'DazzleLinkData'):
-                # Try using the real library first
-                try:
-                    dl_data = dazzlelink.DazzleLinkData.from_file(str(dl_path))
-                    original_path = dl_data.get_original_path()
-                    target_path = dl_data.get_target_path()
-                    creation_date = dl_data.get_creation_date()
-                    timestamps = dl_data.get_link_timestamps()
-                except Exception as e:
-                    logger.warning(f"Error using dazzlelink library to read link, falling back to simplified implementation: {e}")
-                    dl_data = None
-            
-            # Fall back to simplified implementation if needed
-            if dl_data is None:
-                dl_data = SimpleDazzleLinkData.from_file(str(dl_path))
-                original_path = dl_data.get_original_path()
-                target_path = dl_data.get_target_path()
-                creation_date = dl_data.get_creation_date()
-                timestamps = dl_data.get_link_timestamps()
+            # Load the dazzlelink record via the lib.
+            dl_data = import_link(str(dl_path))
+            original_path = dl_data.get_original_path()
+            target_path = dl_data.get_target_path()
+            creation_date = dl_data.get_creation_date()
+            timestamps = dl_data.get_link_timestamps()
             
             if not original_path or not target_path:
                 logger.warning(f"Missing path information in dazzlelink: {dl_path}")
@@ -922,41 +714,11 @@ def manifest_to_dazzlelinks(
             dl_name = f"{Path(source_path).name}.dazzlelink"
             dl_path = output_dir_path / dl_name
             
-            # Try to use the real library first
-            if HAVE_DAZZLELINK:
-                try:
-                    if hasattr(dazzlelink, 'create_link'):
-                        # Try to create the dazzlelink directly
-                        dazzlelink_path = dazzlelink.create_link(source_path, str(dl_path))
-                        created_dazzlelinks.append(Path(dazzlelink_path))
-                        continue  # Skip the simplified implementation
-                    elif hasattr(dazzlelink, 'DazzleLinkData'):
-                        # Try using DazzleLinkData if available
-                        dl_data = dazzlelink.DazzleLinkData()
-                        dl_data.set_original_path(source_path)
-                        dl_data.set_target_path(destination_path)
-                        
-                        # Set timestamps if available
-                        if "timestamps" in file_info:
-                            timestamps = file_info["timestamps"]
-                            dl_data.set_link_timestamps(
-                                created=timestamps.get("created"),
-                                modified=timestamps.get("modified"),
-                                accessed=timestamps.get("accessed")
-                            )
-                        
-                        # Save dazzlelink
-                        if dl_data.save_to_file(str(dl_path), make_executable=make_executable):
-                            created_dazzlelinks.append(dl_path)
-                            continue  # Skip the simplified implementation
-                except Exception as e:
-                    logger.warning(f"Error using dazzlelink library to create link, falling back to simplified implementation: {e}")
-            
-            # Fall back to simplified implementation
-            dl_data = SimpleDazzleLinkData()
+            # Build a dazzlelink record and WRITE it via export_link.
+            dl_data = DazzleLinkData()
             dl_data.set_original_path(source_path)
             dl_data.set_target_path(destination_path)
-            
+
             # Set timestamps if available
             if "timestamps" in file_info:
                 timestamps = file_info["timestamps"]
@@ -965,9 +727,8 @@ def manifest_to_dazzlelinks(
                     modified=timestamps.get("modified"),
                     accessed=timestamps.get("accessed")
                 )
-            
-            # Save dazzlelink
-            if dl_data.save_to_file(str(dl_path), make_executable=make_executable):
+
+            if export_link(dl_data, str(dl_path), make_executable=make_executable):
                 created_dazzlelinks.append(dl_path)
             
         except Exception as e:

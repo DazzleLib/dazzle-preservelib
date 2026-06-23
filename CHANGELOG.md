@@ -58,6 +58,17 @@ release (`docs/api-stability.md`).
     and verification (`VerificationStatus`/`find_and_verify_manifest`/...) surfaces
     so no consumer loses a package-level symbol. Fixed the stale `preservelib.*`
     logger names.
+  - **`[dazzlelink]` bridge rewired to `dazzle_linklib` (step 5b).** Per the meshing
+    DWP, the bridge is a thin adapter over the lib's RECORD API: it builds
+    `DazzleLinkData` records and writes/reads them via `export_link`/`import_link`/
+    `find_dazzlelinks` -- NOT the lib's `create_link` (which makes an OS symlink;
+    a same-name collision with the dazzlelink tool's old API). Deleted
+    `SimpleDazzleLinkData` (a subset of `DazzleLinkData`), the multi-API `hasattr`
+    shimming, and the last `sys.path.insert` fallback (V5). All preserve-domain
+    path-layout/mode/timestamp logic is preserved verbatim. The `[dazzlelink]`
+    extra now hard-requires `dazzle-linklib` (D2). core.py -239 net lines; new
+    round-trip tests guard the write/read and the `export_link`-not-`create_link`
+    invariant.
 
 ### Notes
 - The first functional release ships as **0.8.0** (continuing the preserve

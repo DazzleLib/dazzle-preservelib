@@ -15,26 +15,20 @@ from typing import Dict, List, Optional, Union, Set, Tuple, Any
 # Set up package-level logger
 logger = logging.getLogger(__name__)
 
-# Check if dazzlelink is available
+# Check if the dazzle-linklib (L2) library is available. It is the optional
+# `[dazzlelink]` extra; without it the bridge functions are not exported and a
+# consumer should gate on is_available() (never a silent bundled-path fallback --
+# V5 removed; D2 hard boundary).
 HAVE_DAZZLELINK = False
 try:
-    import dazzlelink
+    import dazzle_linklib
     HAVE_DAZZLELINK = True
-    logger.debug("Dazzlelink library found, integration enabled")
+    logger.debug("dazzle-linklib found, dazzlelink integration enabled")
 except ImportError:
-    # Try with the bundled version
-    try:
-        import sys
-        from pathlib import Path
-        # Look for bundled dazzlelink in parent directory of preservelib
-        bundled_path = Path(__file__).parent.parent.parent / 'dazzlelink'
-        if bundled_path.exists() and str(bundled_path) not in sys.path:
-            sys.path.insert(0, str(bundled_path))
-        import dazzlelink
-        HAVE_DAZZLELINK = True
-        logger.debug("Bundled dazzlelink library found, integration enabled")
-    except ImportError:
-        logger.debug("Dazzlelink library not found, integration disabled")
+    logger.debug(
+        "dazzle-linklib not installed; dazzlelink integration disabled "
+        "(install the extra: pip install dazzle-preservelib[dazzlelink])"
+    )
 
 def is_available() -> bool:
     """
