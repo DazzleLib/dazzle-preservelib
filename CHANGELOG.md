@@ -52,6 +52,12 @@ release (`docs/api-stability.md`).
   - **Removed the dead `from preserve.output import get_formatter`** upward CLI
     coupling in `operations.py` (it was unreachable -- nested in a contradictory
     `if formatter is None` inside `if formatter:`).
+  - **Union `__init__` surface (step 5a).** Widened the package's public exports
+    to the union of the canonical/ghtraf/safedel copies (30 symbols) -- adds the
+    destination-awareness (`FileCategory`/`ConflictResolution`/`scan_destination`/...)
+    and verification (`VerificationStatus`/`find_and_verify_manifest`/...) surfaces
+    so no consumer loses a package-level symbol. Fixed the stale `preservelib.*`
+    logger names.
 
 ### Notes
 - The first functional release ships as **0.8.0** (continuing the preserve

@@ -44,6 +44,26 @@ from .restore import (
     find_restoreable_files
 )
 
+# Destination-awareness + verification surfaces (union with the ghtraf/safedel
+# copies, so no consumer loses a package-level symbol after consolidation).
+from .destination import (
+    FileCategory,
+    ConflictResolution,
+    FileComparison,
+    DestinationScanResult,
+    compare_files,
+    scan_destination,
+)
+
+from .verification import (
+    VerificationStatus,
+    FileVerificationResult,
+    VerificationResult,
+    verify_file_against_manifest,
+    verify_files_against_manifest,
+    find_and_verify_manifest,
+)
+
 # Version from this package's own _version.py (repokit autobump).
 from ._version import __version__, __app_name__, PIP_VERSION
 
@@ -83,7 +103,7 @@ def configure_logging(level=logging.INFO, log_file=None):
             root_logger.addHandler(file_handler)
     
     # Set the level on the preservelib and submodule loggers
-    for module_name in [__name__, 'preservelib.operations', 'preservelib.dazzlelink']:
+    for module_name in [__name__, 'dazzle_preservelib.operations', 'dazzle_preservelib.dazzlelink']:
         module_logger = logging.getLogger(module_name)
         module_logger.setLevel(level)
         # Keep propagate=True to avoid duplicate logging
@@ -124,5 +144,21 @@ __all__ = [
     # Restore functions
     'restore_file_to_original',
     'restore_files_from_manifest',
-    'find_restoreable_files'
+    'find_restoreable_files',
+
+    # Destination awareness (conflict resolution)
+    'FileCategory',
+    'ConflictResolution',
+    'FileComparison',
+    'DestinationScanResult',
+    'compare_files',
+    'scan_destination',
+
+    # Verification
+    'VerificationStatus',
+    'FileVerificationResult',
+    'VerificationResult',
+    'verify_file_against_manifest',
+    'verify_files_against_manifest',
+    'find_and_verify_manifest',
 ]
