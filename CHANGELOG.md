@@ -5,12 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a PEP 440 versioning scheme (see `_version.py`).
 
-Status: **pre-release (P3 extraction in progress).** The first functional
-release is **0.8.0** (continuing the preserve lineage; supersedes the
-0.4.0-snapshot and 0.7.3-embedded lineages). The public surface locks at that
-release (`docs/api-stability.md`).
+Status: **0.8.0 -- first functional release.** The L3 extraction is complete:
+the lifted `preservelib` delegates its OS mechanics to `dazzle-filekit` (L1),
+its `.dazzlelink` records to `dazzle-linklib` (L2), and is a verified drop-in
+for the `preserve` CLI (its full suite runs green against this library). The
+public surface locks here (`docs/api-stability.md`). Continues the preserve
+lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages.
 
-## [Unreleased]
+## [0.8.0] -- 2026-06-23
 
 ### Added
 - Project scaffold: MIT license, `dazzle_preservelib` package, charter
