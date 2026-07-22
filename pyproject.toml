@@ -34,7 +34,8 @@ classifiers = [
 # disk-space). unctools (L0) joins when UNC-identity delegation lands.
 dependencies = [
     "dazzle-lib>=0.1.0",
-    "dazzle-filekit>=0.3.2",
+    # linkmirror needs create_junction_raw + exact-ns link timestamps (0.3.4)
+    "dazzle-filekit>=0.3.4",
 ]
 
 [project.optional-dependencies]

@@ -11,8 +11,9 @@
 
 It owns the *preserve* domain: the `PreserveManifest` (a content-hash record of
 what was copied, with DAG lineage), transactional **copy / move / restore /
-verify** operations, destination-conflict resolution, and link-handling
-**policy**. It delegates the actual filesystem mechanics down the stack.
+verify** operations, destination-conflict resolution, link-handling **policy**,
+and **link-mirror reconciliation** (`linkmirror`). It delegates the actual
+filesystem mechanics down the stack.
 
 ## What this owns (and what it delegates)
 
@@ -29,6 +30,43 @@ the layers below. This library is the destination of the **P3 extraction** that
 collapses three drifting `preservelib` copies (preserve, ghtraf, safedel) into
 one canonical home.
 
+## linkmirror -- reconcile links onto a mirrored tree
+
+File-level mirrors (robocopy, Beyond Compare, `preserve COPY`) carry the files
+but frequently drop the **links**: symlinks and junctions vanish, hardlink
+groups arrive as independent duplicates. `dazzle_preservelib.linkmirror` is the
+mirror-scoped implementation of `LinkHandlingMode.RECREATE`
+([preserve#48](https://github.com/DazzleTools/preserve/issues/48) Phase 2,
+narrowed to the case that needs no lineage tracking: the destination already
+holds the copied files, so link identity is *same relative path*).
+
+```python
+from dazzle_preservelib.linkmirror import (
+    walk_scan, build_plan, apply_plan, verify_mirror,
+)
+
+manifest = walk_scan(r"D:\data")                # or mft.mft_scan (elevated, fast)
+plan = build_plan(manifest, r"B:\data")         # diff against the mirror
+result = apply_plan(plan, dry_run=False)        # additive-only: creates links,
+                                                # restores link + parent times
+report = verify_mirror(manifest, r"B:\data")    # byte/tick parity proof
+```
+
+Fidelity contract: targets are recreated **verbatim** (relative targets
+unresolved, intentionally-broken targets unrepaired, `\\?\` forms kept) with
+the link's own timestamps at 100ns precision; existing destination entries are
+never modified (mismatches are reported as conflicts); re-runs are idempotent.
+Target rewriting (e.g. `D:\` -> `B:\` for drive retirement) is an explicit
+pluggable policy (`make_prefix_rewrite_policy`). Hardlink reconciliation is
+opt-in and sha256-guarded. The `dz link-mirror` tool (dazzlecmd) is the thin
+CLI over this engine.
+
+Scanner backends: a portable `os.scandir` walk, and a Windows MFT/USN
+enumeration (`linkmirror.mft`, requires elevation) that inventories
+multi-million-record volumes in minutes -- field-proven mirroring 2,644 links
+off a failing 51M-record drive with nanosecond-identical timestamps and zero
+additional wear.
+
 ## The stack
 
 | Layer | Library | Role |
@@ -42,12 +80,12 @@ one canonical home.
 
 ## Status
 
-**Pre-release (P3 extraction in progress).** This repository is being populated
-by the P3 extraction of `preservelib` from the `preserve` project: the manifest
-+ operations move here as a standalone library, the filesystem primitives
-delegate down to `dazzle-filekit`, and the `preserve` CLI thins to a consumer.
-The first functional release will be **0.8.0** (continuing the preserve lineage).
-See the [Roadmap](https://github.com/DazzleLib/dazzle-preservelib/issues/2).
+**Functional (0.8.0 shipped the P3 extraction; 0.9.0 added `linkmirror`).**
+The manifest + operations API is locked (see
+[docs/api-stability.md](docs/api-stability.md)); the `preserve` CLI consumes
+this library. The `linkmirror` package is **provisional** in 0.9.x (API may
+still refine; locks at 0.10). See the
+[Roadmap](https://github.com/DazzleLib/dazzle-preservelib/issues/2).
 
 ## Installation
 

@@ -264,10 +264,19 @@ def decide_link_action(
             return LinkAction.SKIP
 
     elif mode == LinkHandlingMode.RECREATE:
-        # Phase 2: recreate all links at destination
+        # Phase 2: recreate all links at destination. The MIRROR-scoped
+        # implementation (destination already holds the copied files; link
+        # identity = same relative path) ships as
+        # ``dazzle_preservelib.linkmirror`` (walk_scan / build_plan /
+        # apply_plan / verify_mirror). MOVE-transaction recreation (targets
+        # that moved in the same operation) still needs file-lineage
+        # identity tracking -- see DazzleTools/preserve#48 Phase 2.
         raise NotImplementedError(
-            "Link handling mode 'recreate' is not yet implemented. "
-            "Use 'skip' or 'unlink' for now. See issue #48 for progress."
+            "Link handling mode 'recreate' is not implemented for MOVE "
+            "transactions (needs file-lineage identity tracking; see "
+            "DazzleTools/preserve#48). For reconciling links between a "
+            "source tree and an already-copied mirror, use "
+            "dazzle_preservelib.linkmirror."
         )
 
     elif mode == LinkHandlingMode.ASK:

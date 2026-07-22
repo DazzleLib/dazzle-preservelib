@@ -12,6 +12,50 @@ for the `preserve` CLI (its full suite runs green against this library). The
 public surface locks here (`docs/api-stability.md`). Continues the preserve
 lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages.
 
+## [0.9.0] -- 2026-07-22
+
+### Added
+- **`linkmirror` package** -- the mirror-scoped implementation of
+  `LinkHandlingMode.RECREATE` (DazzleTools/preserve#48 Phase 2, narrowed to
+  the case that needs no file-lineage tracking: the destination tree already
+  holds the copied files, link identity = same relative path). Born from the
+  2026-07 D:->B: drive-retirement migration where robocopy/Beyond Compare
+  silently dropped every symlink/junction and materialized hardlink groups
+  as duplicate files.
+  - `records` -- `LinkRecord`/`LinkManifest` scanner contract (raw verbatim
+    targets: relative unresolved, broken unrepaired, `\\?\` forms kept).
+  - `scan.walk_scan` -- portable scandir backend; long-path safe (`\\?\`
+    internal walk); never descends reparse points; captures link-node
+    dir-kind from `FILE_ATTRIBUTE_DIRECTORY` (a broken directory symlink is
+    otherwise unknowable); optional per-file `os.stat` hardlink detection
+    (find-data `st_nlink` is always 0 -- measured).
+  - `mft.mft_scan` -- Windows MFT/USN enumeration backend
+    (`FSCTL_ENUM_USN_DATA`, ctypes): near-sequential reads for
+    multi-million-record volumes where directory walking is hours of
+    seek-heavy load; requires elevation (`MftAccessDenied` -> callers fall
+    back to walk); hardlink groups via shared FileReferenceNumber. Filenames
+    decode with `surrogatepass` -- NTFS names are arbitrary 16-bit code
+    units, and a strict UTF-16 decode aborted the first real drive-wide scan
+    on an unpaired surrogate (found 2026-07-22, regression-tested).
+  - `plan.build_plan`/`apply_plan` -- additive-only diff/apply: creates
+    missing links (filekit `create_symlink` verbatim / `create_junction_raw`),
+    restores link-own timestamps at 100ns precision (filekit exact-ns path),
+    snapshots + restores parent-directory times, reports conflicts without
+    ever modifying existing entries; idempotent. Hardlink reconciliation is
+    opt-in (`hardlink_mode='recreate'`), sha256-guarded, atomic
+    (temp link + `os.replace`); default `'report'` changes nothing.
+  - `plan.make_prefix_rewrite_policy` -- pluggable target translation
+    (`D:\` -> `B:\`) handling `\\?\`/`\??\` forms; default stays verbatim.
+  - `verify.verify_mirror` -- source/destination parity report (kind, target
+    bytes, timestamps within tolerance, hardlink topology) with the honest
+    NTFS change-time caveat.
+
+### Changed
+- `LinkHandlingMode.RECREATE`/`ASK` stub messages now state the actual
+  boundary: MOVE-transaction recreation still needs file-lineage identity
+  tracking (preserve#48), while mirror reconciliation is implemented --
+  pointing callers at `dazzle_preservelib.linkmirror`.
+
 ## [0.8.1] -- 2026-06-23
 
 ### Added

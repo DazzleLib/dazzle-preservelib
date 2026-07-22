@@ -44,12 +44,27 @@ PHASE drop to a stable **0.8.0** (and the PyPI publish it triggers) is the
 single reviewed release milestone; the locks above already guard the surface
 through the remaining alpha PATCH iterations.
 
+## Provisional surface: `linkmirror` (0.9.x)
+
+The `linkmirror` package (0.9.0) is **provisional**: its entry points
+(`walk_scan`, `build_plan`, `apply_plan`, `verify_mirror`,
+`LinkRecord`/`LinkManifest`, the `KIND_*`/`ACTION_*` constants, the target
+policies, and `linkmirror.mft`) are public and consumed by dazzlecmd's
+`dz link-mirror`, but they are NOT yet in the import-stability canary and may
+refine within 0.9.x (shim-free). What is stable already, because consumers
+depend on it behaviorally: the **fidelity contract** (verbatim targets, broken
+links preserved, link-own timestamps, additive-only apply, idempotency) and
+the **manifest JSON shape** (`LinkManifest.to_dict`/`from_dict` round-trip --
+saved manifests are audit records that must stay loadable). Plan: lock the
+symbol surface at 0.10 by adding it to the canary.
+
 ## Upstream dependencies
 
 - `dazzle-lib` (B): `Serializable`, `DazzleDataMixin`, `PreserveError`.
 - `dazzle-filekit` (L1): link create/detect/read/**remove**, metadata
   collect/apply, hashing/verification, disk-space (the OS mechanics L3 delegates
-  to).
+  to). Since 0.9.0 also: `create_junction_raw` and the exact-ns link-timestamp
+  path (filekit >= 0.3.4), which `linkmirror` recreation stands on.
 - `dazzle-linklib` (L2): the `.dazzlelink` record, via the optional
   `[dazzlelink]` extra (hard named error when absent).
 
@@ -61,3 +76,4 @@ through the remaining alpha PATCH iterations.
 | safedel (dazzlecmd) | stack phase P4 |
 | ghtraf | stack phase P4 |
 | csb (recorded-fidelity / Track C) | after 0.8.0 |
+| dz link-mirror (dazzlecmd, via `linkmirror`) | 0.9.0 |

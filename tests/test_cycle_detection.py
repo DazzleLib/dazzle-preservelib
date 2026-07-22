@@ -682,7 +682,8 @@ class TestDecideLinkAction(unittest.TestCase):
         self.assertEqual(action, LinkAction.SKIP)
 
     def test_recreate_mode_not_implemented(self):
-        """Recreate mode should raise NotImplementedError."""
+        """Recreate mode raises NotImplementedError for MOVE transactions,
+        pointing at the mirror-scoped implementation (linkmirror)."""
         from dazzle_preservelib.links import LinkInfo, LinkHandlingMode, decide_link_action
 
         info = LinkInfo(link_path=Path("/source/link"))
@@ -690,7 +691,8 @@ class TestDecideLinkAction(unittest.TestCase):
             decide_link_action(info, LinkHandlingMode.RECREATE, Path("/dest"))
 
         self.assertIn("recreate", str(ctx.exception))
-        self.assertIn("not yet implemented", str(ctx.exception))
+        self.assertIn("not implemented for MOVE", str(ctx.exception))
+        self.assertIn("linkmirror", str(ctx.exception))
 
     def test_ask_mode_not_implemented(self):
         """Ask mode should raise NotImplementedError."""
