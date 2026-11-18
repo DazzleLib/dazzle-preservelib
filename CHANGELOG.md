@@ -12,6 +12,16 @@ for the `preserve` CLI (its full suite runs green against this library). The
 public surface locks here (`docs/api-stability.md`). Continues the preserve
 lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages.
 
+## [0.9.1] -- 2026-11-17
+
+### Fixed
+- **A move no longer destroys a source that shares its name with another source in the same call.** With flat paths, two sources named `x.txt` map to one destination. Under `overwrite` (dazzlecmd's `f-mv -f`), `newer` or `larger`, the second copy replaced the first, and the move then deleted both sources -- the first file's content existed nowhere, and the command reported success. Within one operation a destination already placed is now never overwritten: the later source is refused with "will not overwrite ..., which this operation just placed from another source with the same name" and, for a move, left in place. `rename` keeps both (`x_001.txt`), `skip` skips, `fail` stops. Overwriting a file that was at the destination before the operation works as before. `copy_operation` gets the same guard, so `f-cp -f` no longer silently drops the first file.
+- **A move re-checks the destination before deleting each source.** The delete step relied on a verification recorded when the copy was made, keyed by destination alone; it now also confirms, immediately before the delete, that the destination still holds that source's bytes, and keeps the source if not.
+
+### Tests
+- `tests/test_same_name_guard.py` (10): 5 detect the fixes (red-green audited), and 5 pin the conflict policies and the move-to-self case. `tests/conftest.py` now refuses to run when `dazzle_preservelib` is imported from a different checkout (an editable install elsewhere), naming the `PYTHONPATH` to use. Full suite on Windows: 226 passed, 3 skipped. Human checklist: `tests/checklists/v0.9.1__Bugfix__same-name-guard-and-delete-gate.md`.
+- Consumers run against this source: the preserve CLI suite (287 passed; its one failure, a message-wording check in `test_cycle_detection.py`, fails on 0.9.0 too) and dazzlecmd's suite (1,683 passed).
+
 ## [0.9.0] -- 2026-07-22
 
 ### Added

@@ -871,6 +871,36 @@ class OperationResult:
         }
 
 
+def _dest_key(path: Union[str, Path]) -> str:
+    """Identity of a destination within one operation (case-insensitive where
+    the platform is), so two spellings of one file count as the same place."""
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
+def _resolve_on_conflict(options: Dict[str, Any]) -> "ConflictResolution":
+    """The conflict policy in force: on_conflict, else the legacy overwrite
+    flag, else SKIP."""
+    on_conflict = options.get("on_conflict")
+    if on_conflict:
+        if isinstance(on_conflict, str):
+            on_conflict = ConflictResolution(on_conflict.lower())
+        return on_conflict
+    if options.get("overwrite"):
+        return ConflictResolution.OVERWRITE
+    return ConflictResolution.SKIP
+
+
+def _unclaimed_rename(dest_path: Path, claimed: Set[str]) -> Path:
+    """``file_NNN.ext`` that neither exists on disk nor was claimed earlier in
+    this operation (in a dry run, claimed files are not on disk yet)."""
+    candidate = dest_path
+    counter = 1
+    while candidate.exists() or _dest_key(candidate) in claimed:
+        candidate = dest_path.parent / f"{dest_path.stem}_{counter:03d}{dest_path.suffix}"
+        counter += 1
+    return candidate
+
+
 def copy_operation(
     source_files: List[Union[str, Path]],
     dest_base: Union[str, Path],
@@ -1120,6 +1150,12 @@ def copy_operation(
                     )
                     options["source_base"] = common_prefix
 
+    # Destinations this call has already written (or incorporated). A later
+    # source in the SAME call that maps to one of them must never overwrite
+    # it: with flat style, two same-named sources map to one destination, and
+    # overwriting the first is what made `f-mv -f a/x b/x dest/` lose a.
+    claimed_dests: Set[str] = set()
+
     # Process each source file
     for source_file in source_files:
         source_path = Path(source_file)
@@ -1162,6 +1198,7 @@ def copy_operation(
                 # Mark as verified since hashes already match
                 result.add_verification(str(dest_path), True, {"incorporated": True})
 
+            claimed_dests.add(_dest_key(dest_path))
             continue  # Skip to next file, don't copy
 
         try:
@@ -1572,20 +1609,39 @@ def copy_operation(
             # Create parent directories
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # Same-name guard (0.9.1): this call already placed a file here.
+            # Overwrite/newer/larger refer to files that were there BEFORE the
+            # operation, never to one it just wrote -- refuse those (a move
+            # keeps the refused source), honour skip and fail, rename apart.
+            if _dest_key(dest_path) in claimed_dests:
+                policy = _resolve_on_conflict(options)
+                if policy == ConflictResolution.RENAME:
+                    dest_path = _unclaimed_rename(dest_path, claimed_dests)
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                elif policy == ConflictResolution.SKIP:
+                    result.add_skip(
+                        str(source_path), str(dest_path),
+                        "Destination was placed earlier in this operation "
+                        "(same name; --on-conflict=skip)",
+                    )
+                    continue
+                else:
+                    error_msg = (
+                        f"will not overwrite {dest_path}, which this operation "
+                        f"just placed from another source with the same name; "
+                        f"{source_path} was left in place "
+                        f"(use --on-conflict rename to keep both)"
+                    )
+                    logger.error(error_msg)
+                    result.add_failure(str(source_path), str(dest_path), error_msg)
+                    if policy == ConflictResolution.FAIL:
+                        break
+                    continue
+
             # Check if destination exists and handle conflict resolution (0.7.x)
             if dest_path.exists():
                 # Determine conflict resolution strategy
-                on_conflict = options.get("on_conflict")
-                if on_conflict:
-                    # Convert string to ConflictResolution enum if needed
-                    if isinstance(on_conflict, str):
-                        on_conflict = ConflictResolution(on_conflict.lower())
-                elif options["overwrite"]:
-                    # Backward compatibility: --overwrite means OVERWRITE
-                    on_conflict = ConflictResolution.OVERWRITE
-                else:
-                    # Default to SKIP
-                    on_conflict = ConflictResolution.SKIP
+                on_conflict = _resolve_on_conflict(options)
 
                 # Handle FAIL mode - abort the entire operation
                 if on_conflict == ConflictResolution.FAIL:
@@ -1696,6 +1752,10 @@ def copy_operation(
                     )
                 else:
                     logger.warning(f"[DEBUG PATH]   - No destination path was set!")
+
+            # From here this call writes dest_path: claim it, so no later
+            # source in the same call can overwrite it.
+            claimed_dests.add(_dest_key(dest_path))
 
             # In dry run mode, just log what would be done
             if options["dry_run"]:
@@ -1965,6 +2025,28 @@ def move_operation(
                 verified = any(path == dest_path for path, _ in copy_result.verified)
                 if not verified:
                     result.retained_sources.append((source_path, dest_path, "verification_skipped"))
+                    continue
+                # The verification above was recorded when the copy was made
+                # and is keyed by destination alone. Re-check, right before the
+                # delete, that the destination still holds THIS source's bytes:
+                # whatever replaced it since, deleting the source would leave
+                # its content nowhere.
+                try:
+                    source_hash = calculate_file_hash(
+                        Path(source_path), [options["hash_algorithm"]]
+                    )
+                    still_same, _details = verify_file_hash(Path(dest_path), source_hash)
+                except OSError as e:
+                    still_same = False
+                    logger.error(f"Could not re-check {dest_path} before delete: {e}")
+                if not still_same:
+                    logger.error(
+                        f"Destination {dest_path} no longer matches {source_path}; "
+                        f"source kept"
+                    )
+                    result.retained_sources.append(
+                        (source_path, dest_path, "destination_changed")
+                    )
                     continue
 
             try:

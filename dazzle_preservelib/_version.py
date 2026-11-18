@@ -18,14 +18,14 @@ Version levels:
 # Version components - edit these for version bumps
 MAJOR = 0
 MINOR = 9
-PATCH = 0
-PHASE = ""  # linkmirror feature set shipped complete (scan/plan/apply/verify + MFT)
+PATCH = 1
+PHASE = ""  # Per-MINOR feature set: None, "alpha", "beta", "rc1", etc.
 
 # Project-level phase (independent of version phase)
 PROJECT_PHASE = "alpha"  # "prealpha", "alpha", "beta", "stable", or ""
 
 # Auto-updated by git hooks - do not edit manually
-__version__ = "0.9.0_main_20-20260722-c75ef3e3"
+__version__ = "0.9.1_same-name-guard_21-20261117-56143429"
 __app_name__ = "dazzle-preservelib"
 
 
