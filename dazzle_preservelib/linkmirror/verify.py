@@ -19,14 +19,11 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .plan import TargetPolicy, verbatim_policy, _is_link_st, _lstat_or_none
+from .plan import (TargetPolicy, verbatim_policy, _expected_kind_matches,
+                   _is_link_st, _lstat_or_none)
 from .records import (
     KIND_HARDLINK,
-    KIND_JUNCTION,
     KIND_OTHER_REPARSE,
-    KIND_SYMLINK,
-    IO_REPARSE_TAG_MOUNT_POINT,
-    IO_REPARSE_TAG_SYMLINK,
     LinkManifest,
 )
 from .scan import extended_path, _birthtime_ns
@@ -55,16 +52,6 @@ class VerifyReport:
     @property
     def ok(self) -> bool:
         return not self.issues
-
-
-def _expected_kind_matches(rec_kind: str, tag: int, is_windows: bool) -> bool:
-    if not is_windows:
-        return rec_kind == KIND_SYMLINK
-    if rec_kind == KIND_SYMLINK:
-        return tag == IO_REPARSE_TAG_SYMLINK
-    if rec_kind == KIND_JUNCTION:
-        return tag == IO_REPARSE_TAG_MOUNT_POINT
-    return False
 
 
 def verify_mirror(

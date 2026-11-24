@@ -35,6 +35,8 @@ from .records import (
     KIND_JUNCTION,
     KIND_OTHER_REPARSE,
     KIND_SYMLINK,
+    IO_REPARSE_TAG_MOUNT_POINT,
+    IO_REPARSE_TAG_SYMLINK,
     LinkManifest,
     LinkRecord,
 )
@@ -127,6 +129,22 @@ def _lstat_or_none(path: str) -> Optional[os.stat_result]:
         return None
 
 
+def _expected_kind_matches(rec_kind: str, tag: int, is_windows: bool) -> bool:
+    """Does an existing destination's reparse tag match the record's kind?
+
+    Shared by build_plan and verify_mirror (moved here from verify.py in
+    0.9.2, so the plan checks the tag before reading a target: a WSL symlink,
+    app alias or cloud placeholder has the reparse bit but no readable target).
+    """
+    if not is_windows:
+        return rec_kind == KIND_SYMLINK
+    if rec_kind == KIND_SYMLINK:
+        return tag == IO_REPARSE_TAG_SYMLINK
+    if rec_kind == KIND_JUNCTION:
+        return tag == IO_REPARSE_TAG_MOUNT_POINT
+    return False
+
+
 def _is_link_st(st: os.stat_result) -> bool:
     if _IS_WINDOWS:
         return bool(
@@ -187,9 +205,18 @@ def build_plan(
             ))
             continue
 
+        tag = getattr(st, "st_reparse_tag", 0)
+        if _IS_WINDOWS and not _expected_kind_matches(rec.kind, tag, True):
+            plan.items.append(PlanItem(
+                ACTION_CONFLICT, rec, dest_path,
+                f"destination is a different kind of link "
+                f"(reparse tag 0x{tag:08X}, expected {rec.kind})",
+            ))
+            continue
+
         try:
             dest_target = os.readlink(extended_path(dest_path))
-        except OSError as e:
+        except (OSError, ValueError, NotImplementedError) as e:
             plan.items.append(PlanItem(
                 ACTION_CONFLICT, rec, dest_path, f"readlink failed: {e}"
             ))

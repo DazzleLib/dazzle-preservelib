@@ -12,6 +12,14 @@ for the `preserve` CLI (its full suite runs green against this library). The
 public surface locks here (`docs/api-stability.md`). Continues the preserve
 lineage; supersedes the 0.4.0-snapshot and 0.7.3-embedded lineages.
 
+## [0.9.2] -- 2026-11-23
+
+### Fixed
+- **linkmirror's plan no longer crashes when a destination holds a different kind of reparse point.** `build_plan` took any reparse point at the destination for a link and read its target with `os.readlink`, catching only `OSError`. A WSL symlink, an app execution alias or a cloud placeholder there raises `ValueError`, and the whole plan failed. The plan now checks the destination's reparse tag against the record's kind first, as `verify_mirror` already did, and reports a mismatch as a conflict ("destination is a different kind of link (reparse tag 0x..., expected ...)"); a target that still cannot be read is a conflict too. The tag check is now one helper shared by the plan and the verifier.
+
+### Tests
+- `tests/test_linkmirror_plan_foreign_reparse.py` (2; both fail on 0.9.1). Full suite on Windows: 228 passed, 3 skipped.
+
 ## [0.9.1] -- 2026-11-17
 
 ### Fixed
